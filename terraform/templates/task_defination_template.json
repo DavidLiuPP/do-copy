@@ -1,0 +1,22 @@
+[
+    {
+      "image": "${image}",
+      "name": "${APP_NAME}",
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "secretOptions": null,
+        "options": {
+          "awslogs-group": "${log_group}",
+          "awslogs-region": "${aws_log_region}",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "portMappings": [
+        {
+          "hostPort": ${APP_PORT},
+          "protocol": "tcp",
+          "containerPort": ${APP_PORT}
+        }
+      ]
+    }
+]

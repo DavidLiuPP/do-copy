@@ -1,0 +1,45 @@
+name: PRODUCTION ECS Deployment
+on: 
+ push:
+  branches:
+    - PRODUCTION
+
+jobs:
+  approval:
+    if: github.ref == vars.PROD_BRANCH
+    uses: PortPro-Technologies-Inc/portpro-tf-app/.github/workflows/approval.yml@main
+    with:
+        environment: production
+    secrets: inherit
+    
+  PRODUCTION:
+    if: github.ref == vars.PROD_BRANCH
+    needs: approval
+    uses: PortPro-Technologies-Inc/portpro-tf-app/.github/workflows/ecs-deploy.yml@main
+    with: 
+        environment: production
+        URL: https://dispatch-optimize.app.portpro.io/
+        ECS_CLUSTER: portpro-live-cluster
+        ECS_SERVICE: dispatch-optimize-service    
+        ECS_TASK_DEFINITION: dispatch-optimize-taskdefinition   
+        CONTAINER_NAME: dispatch-optimize
+        ECR_REPOSITORY: dispatch-optimize.app.portpro.io
+        AWS_SECRETS_MANAGER_ID: dispatch-optimize.app.portpro.io
+        approval: 0
+    secrets: inherit
+
+  PRODUCTION-QUEUE:
+    if: github.ref == vars.PROD_BRANCH
+    needs: approval
+    uses: PortPro-Technologies-Inc/portpro-tf-app/.github/workflows/ecs-deploy.yml@main
+    with: 
+        environment: production
+        URL: https://dispatch-optimize-queue.app.portpro.io/
+        ECS_CLUSTER: portpro-live-cluster
+        ECS_SERVICE: dispatch-optimize-queue-live-service
+        ECS_TASK_DEFINITION: dispatch-optimize-queue-live-taskdefinition
+        CONTAINER_NAME: dispatch-optimize-queue-live
+        ECR_REPOSITORY: dispatch-optimize-queue.app.portpro.io
+        AWS_SECRETS_MANAGER_ID: dispatch-optimize-queue.app.portpro.io
+        approval: 0
+    secrets: inherit

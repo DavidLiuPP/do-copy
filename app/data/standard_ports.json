@@ -1,0 +1,3009 @@
+[
+    {
+        "_id": "66029f764df6d9651fb52f76",
+        "portCode": "APM TERMINAL",
+        "aliases": [
+            "apm terminal",
+            "APM TERMINAL",
+            "APM TERMINAL (LA)",
+            "400 - apm terminal",
+            "maersk/ apm",
+            "APM LOS ANGELES",
+            "APM - LOS ANGELES",
+            "APM Terminals - San Pedro"
+        ],
+        "isLogin": false,
+        "hasAppointment": true,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a15e4df6d9651fb530b4",
+        "portCode": "PCT",
+        "aliases": [
+            "pct",
+            "PCT",
+            "PCT / ETS",
+            "cosco/ pct",
+            "PCT-PIER J",
+            "PCT - LONG BEACH",
+            "Pacific Container Terminal - PCT"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true,
+        "config": "{\n    \"method\": \"post\",\n    \"url\": \"https://pct.tideworks.com/fc-PCT/import/default.do?method=defaultSearch\",\n    \"headers\": {\n        \"Accept\": \"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\",\n        \"Accept-Language\": \"en-US,en;q=0.9\",\n        \"Cache-Control\": \"max-age=0\",\n        \"Connection\": \"keep-alive\",\n        \"Content-Type\": \"application/x-www-form-urlencoded\",\n        \"Cookie\": \"BNI_JSESSIONID=aJhuFD39VaPmhsRcyl1o1s0yU1It5TvfctCmujzyg3A3r6GSRqMMzOGt4P4FyDsPLTReXpd9Yd60YZsWQyvuSg==; JSESSIONID=51AFB87FC8CC0FA0C3F7809C72B7C343; BNI_JSESSIONID=aJhuFD39VaPmhsRcyl1o1s0yU1It5TvfctCmujzyg3A3r6GSRqMMzOGt4P4FyDsPLTReXpd9Yd60YZsWQyvuSg==; __utmc=152605880; __utmz=152605880.1728302155.1.1.utmcsr=google|utmccn=(organic)|utmcmd=organic|utmctr=(not%20provided); __utma=152605880.1546178652.1728302155.1728302155.1728306385.2; __utmt=1; __utmt_b=1; __utmb=152605880.8.10.1728306385; BNI_JSESSIONID=aJhuFD39VaPmhsRcyl1o1s0yU1It5TvfctCmujzyg3A3r6GSRqMMzOGt4P4FyDsPLTReXpd9Yd60YZsWQyvuSg==\",\n        \"Origin\": \"https://pct.tideworks.com\",\n        \"Referer\": \"https://pct.tideworks.com/fc-PCT/import/default.do\",\n    },\n    \"data\": {\n        \"searchBy\": \"CTR\",\n        \"numbers\": \"SMCU1214625\",\n        \"scac\": \"\"\n    }\n}",
+        "expectedStatus": "200",
+        "isSiteTracker": true
+    },
+    {
+        "_id": "6602a15e4df6d9651fb530b3",
+        "portCode": "PIER A",
+        "aliases": [
+            "pier a",
+            "PIER A",
+            "PIER A (SSA)",
+            "PIER A SSA OR A-90",
+            "PIER A / SSA - LONG BEACH",
+            "SSA Long Beach Pier A"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a6064df6d9651fb53105",
+        "portCode": "BNSF HOUSTON",
+        "aliases": [
+            "BNSF HOUSTON",
+            "BNSF - Houston (Pearland)",
+            "BNSF - Houston",
+            "BNSF",
+            "BNSF RAIL MAIN",
+            "BNSF Railway Co (Pearland)",
+            "BNSF - HOUSTON"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "HOUSTON",
+        "terminalCode": 4,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a0dc4df6d9651fb53089",
+        "portCode": "FENIX",
+        "aliases": [
+            "FENIX",
+            "fenix",
+            "FENIX MARINE",
+            "fenix marine",
+            "APL/FENIX",
+            "APL",
+            "FENIX MARINE (FMS)",
+            "FENIX MARINE TERMINALS CORP",
+            "FENIX_P",
+            "FMS",
+            "APL-FMS",
+            "apl/ fenix",
+            "eagle marine terminal (firm code y257) fenix marine",
+            "FENIX Marine Services",
+            "APL | FENIX MARINE",
+            "FENIX - TERMINAL ISLAND",
+            "Fenix Marine Terminal - FMS"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a5364df6d9651fb530f5",
+        "portCode": "MAHER TERMINAL",
+        "aliases": [
+            "MAHER",
+            "MAHER TERMINAL",
+            "maher terminal",
+            "maher",
+            "MAHER ELIZABETH",
+            "MAHER - ELIZABETH",
+            "Maher Container Terminal",
+            "MAHER TERMINAL (E416) BERTH 64"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "NJNY",
+        "terminalCode": 2,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "66039ea48bd42cdcc77877fc",
+        "portCode": "CONLEY",
+        "aliases": [
+            "CONLEY",
+            "Conley",
+            "CONLEY CONTAINER TERMINAL"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "BOSTON",
+        "terminalCode": 16,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "66039ea48bd42cdcc7787800",
+        "portCode": "ICI WORCESTER",
+        "aliases": [
+            "ICI WORCESTER",
+            "ICI - Worcester",
+            "Intransit Container - Worcester",
+            "INTRANSIT CONTAINER - WORCESTER"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "BOSTON",
+        "terminalCode": 16,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a2a38bd42cdcc7787830",
+        "portCode": "TERMINAL 18",
+        "aliases": [
+            "TERMINAL 18",
+            "Terminal 18 - SSA Seattle",
+            "TERMINAL 18 - SSA SEATTLE"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a6ad4df6d9651fb53114",
+        "portCode": "HLT",
+        "aliases": [
+            "HLT - Hugh Leatherman Terminal",
+            "HLT",
+            "HLT - HUGH K LEATHERMAN TERMINAL",
+            "HLT- HUGH K. LEATHERMAN",
+            "HLT - Hugh K. Leatherman Terminal",
+            "Hugh K. Leatherman Terminal - HLT"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHARLESTON",
+        "terminalCode": 5,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66039cec8bd42cdcc7787756",
+        "portCode": "CP BRAMPTON",
+        "aliases": [
+            "CP BRAMPTON",
+            "CP Brampton",
+            "CP - BRAMPTON",
+            "CP Brampton"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "TORONTO",
+        "terminalCode": 15,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66039ea48bd42cdcc77877fe",
+        "portCode": "CSX WORCESTER",
+        "aliases": [
+            "CSX WORCESTER",
+            "CSX - Worcester",
+            "CSX - WORCESTER"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "BOSTON",
+        "terminalCode": 16,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a2a38bd42cdcc7787834",
+        "portCode": "BNSF TACOMA",
+        "aliases": [
+            "BNSF - Tacoma (North Yard)",
+            "BNSF - Tacoma (South Yard)",
+            "BNSF TACOMA",
+            "BNSF South Tacoma",
+            "BNSF North Tacoma",
+            "BNSF TACOMA NORTH",
+            "BNSF - TACOMA NORTH",
+            "BNSF - South Seattle",
+            "BNSF SEATTLE 51ST",
+            "BNSF - SEATTLE (51ST)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a2044df6d9651fb530c5",
+        "portCode": "YTI",
+        "aliases": [
+            "yti",
+            "YTI",
+            "YTI-214",
+            "YUSEN TERMINAL INC",
+            "YTI-214 (YUSEN)",
+            "YTI TERMINAL",
+            "YUSEN TERMINAL",
+            "YUSEN/ YTI",
+            "214 - yti",
+            "YUSEN",
+            "YTI | YUSEN TERMINAL ISLAND.",
+            "YTI - TERMINAL ISLAND",
+            "Yusen Terminals - YTI"
+        ],
+        "isLogin": true,
+        "hasAppointment": true,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a3f54df6d9651fb530dd",
+        "portCode": "BNSF SAN BERNARDINO",
+        "aliases": [
+            "BNSF - San Bernardino",
+            "BNSF SAN BERNARDINO",
+            "BNSF - SAN BERNARDINO",
+            "BNSF SB"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a2a38bd42cdcc778782f",
+        "portCode": "HUSKY TERMINAL & STEVEDORING",
+        "aliases": [
+            "HUSKY TERMINAL & STEVEDORING",
+            "HUSKY TERMINAL",
+            "HUSKY TERMINAL STEVEDORING",
+            "HUSKY TACOMA",
+            "HUSKY TERMINAL - TACOMA",
+            "Husky Terminal & Stevedoring"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a8624df6d9651fb5329c",
+        "portCode": "NS AUSTELL",
+        "aliases": [
+            "NS AUSTELL",
+            "NS - AUSTELL"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "ATLANTA",
+        "terminalCode": 10,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602ad3d4df6d9651fb53302",
+        "portCode": "POMTOC",
+        "aliases": [
+            "POMTOC",
+            "POMTOC - PORT OF MIAMI TERMINAL",
+            "POMTOC - South Florida Container Terminal (SFCT)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MIAMI",
+        "terminalCode": 11,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "66039ea48bd42cdcc77877ff",
+        "portCode": "NS AYER",
+        "aliases": [
+            "NS AYER",
+            "NS - Ayer",
+            "NS - AYER"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "BOSTON",
+        "terminalCode": 16,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a5364df6d9651fb530f4",
+        "portCode": "PNCT",
+        "aliases": [
+            "pnct",
+            "PNCT",
+            "PNCT NEWARK",
+            "PNCT - NEWARK",
+            "PNCT-Pt Newark Container Term"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "NJNY",
+        "terminalCode": 2,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a77b4df6d9651fb53138",
+        "portCode": "GCT",
+        "aliases": [
+            "GCT",
+            "Garden city terminal",
+            "Garden City Terminal",
+            "GCT SAVANNAH",
+            "GCT Savannah",
+            "GCT - SAVANNAH",
+            "Garden City Terminal - Savannah GA Port",
+            "GPA SAVANNAH"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SAVANNAH",
+        "terminalCode": 8,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66039cec8bd42cdcc7787757",
+        "portCode": "CN BRAMPTON",
+        "aliases": [
+            "BRAMPTON",
+            "BIT",
+            "CN BRAMPTON",
+            "CN BIT",
+            "CN TERMINAL",
+            "CN - BRAMPTON",
+            "CN - Brampton Intermodal Terminal (BIT)",
+            "CN - BIT"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "TORONTO",
+        "terminalCode": 15,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a15e4df6d9651fb530b2",
+        "portCode": "LBCT",
+        "aliases": [
+            "LBCT",
+            "lbct",
+            "LBCT/ PIER E",
+            "LONG BEACH CONTAINER TERMINAL PIER E (WAC8)",
+            "LBCT Pier E",
+            "lbct pier e",
+            "pier e (wac8) lbct",
+            "LBCT - LONG BEACH CONTAINER TERMINAL",
+            "Long Beach Container Terminal - LBCT"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a2044df6d9651fb530c2",
+        "portCode": "ITS TERMINAL",
+        "aliases": [
+            "its terminal",
+            "ITS",
+            "its",
+            "ITS TERMINAL",
+            "kline/ its",
+            "ITS - Pier G",
+            "ITS TERMINAL - LONG BEACH",
+            "ITS Terminal Long Beach"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602ad904df6d9651fb5330a",
+        "portCode": "PACKER MARINE TERMINAL",
+        "aliases": [
+            "PACKER MARINE TERMINAL",
+            "Packer Marine Terminal",
+            "PACKER MARINE",
+            "Port of Philadelphia (Packer Ave)",
+            "PORT OF PHILADELPHIA",
+            "Packer Marine Terminal"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "PHILADELPHIA",
+        "terminalCode": 12,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a0dc4df6d9651fb5308a",
+        "portCode": "WBCT",
+        "aliases": [
+            "WBCT",
+            "wbct",
+            "WBCT (Y773)",
+            "YANG MING/ WBCT",
+            "WBCT | WEST BASIN CONTAINER TERMINAL",
+            "WBCT - WEST BASIN CONTAINER TERMINAL",
+            "WBCT - Los Angeles",
+            "West Basin Container Terminal - WBCT"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a2044df6d9651fb530c4",
+        "portCode": "TRAPAC",
+        "aliases": [
+            "trapac",
+            "TRAPAC",
+            "TRAPAC TERMINAL",
+            "TRAPAC BERTH 30",
+            "TRAPAC RAIL",
+            "TRAPAC - WILMINGTON",
+            "TraPac"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a0054df6d9651fb52fa2",
+        "portCode": "EVERPORT TERMINAL",
+        "aliases": [
+            "everport terminal",
+            "EVERPORT",
+            "everport",
+            "ETS",
+            "EVERPORT TERMINAL",
+            "EVERPORT CONTAINER TERMINAL",
+            "EVERPORT_P",
+            "ETS",
+            "ETS EVERPORT",
+            "evergreen/ ets",
+            "233 - ets",
+            "EVERPORT - TERMINAL ISLAND",
+            "Everport Terminal Services"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602ad3d4df6d9651fb53300",
+        "portCode": "SFCT TERMINAL",
+        "aliases": [
+            "SFCT TERMINAL",
+            "SFCT",
+            "SFCT - South Florida Container Terminal",
+            "South Florida Container Terminal (SFCT)"
+        ],
+        "isLogin": false,
+        "hasAppointment": true,
+        "market": "MIAMI",
+        "terminalCode": 11,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "66039cec8bd42cdcc7787755",
+        "portCode": "CP VAUGHAN",
+        "aliases": [
+            "CP VAUGHAN",
+            "Cp Vaughan",
+            "CPR - VAUGHAN"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "TORONTO",
+        "terminalCode": 15,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a2a38bd42cdcc7787836",
+        "portCode": "UP SEATTLE",
+        "aliases": [
+            "UP Seattle",
+            "UP SEATTLE",
+            "UP - SEATTLE",
+            "UP - Denver Avenue"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a3f54df6d9651fb530df",
+        "portCode": "EMODAL",
+        "aliases": [
+            "EMODAL"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a5364df6d9651fb530f3",
+        "portCode": "APM",
+        "aliases": [
+            "APM",
+            "apm",
+            "APM (NY/NJ)",
+            "APM ELIZABETH",
+            "APM - ELIZABETH",
+            "APM Terminals - Port Elizabeth"
+        ],
+        "isLogin": false,
+        "hasAppointment": true,
+        "market": "NJNY",
+        "terminalCode": 2,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true,
+            "isDriverNameRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true,
+        "config": "{\n  method: 'post',\n  maxBodyLength: Infinity,\n  url: 'https://www.apmterminals.com/apm/api/trackandtrace/validate-import-availability',\n  headers: { \n    'accept': 'application/json, text/javascript, */*; q=0.01', \n    'accept-language': 'en-US,en;q=0.9', \n    'content-type': 'application/json', \n    'origin': 'https://www.apmterminals.com', \n    'priority': 'u=1, i', \n    'referer': 'https://www.apmterminals.com/en/miami/track-and-trace/import-availability', \n    'sec-ch-ua': '\"Google Chrome\";v=\"129\", \"Not=A?Brand\";v=\"8\", \"Chromium\";v=\"129\"', \n    'sec-ch-ua-mobile': '?0', \n    'sec-ch-ua-platform': '\"macOS\"', \n    'sec-fetch-dest': 'empty', \n    'sec-fetch-mode': 'cors', \n    'sec-fetch-site': 'same-origin', \n    'site-id': '369d208d-f0ad-4ea9-93d4-fbef44bbb5d8', \n    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36', \n    'x-requested-with': 'XMLHttpRequest', \n    'Cookie': '_abck=C71B6EEAAFACD3889A9EC283646060DF~-1~YAAQtJbTZ+GjADGSAQAA0pvkUgwWEv8pxRWTQPVelraL6Q9Y8IEw/29HFwjbPuHlWWvniyZK6wPYIR1LSkrWGZZbiVt2ENQFE+kW1A76Ze7zEjdgA4EjNufA9+o0hEIDSJStq+rwcqv24EVY/Iv5X0ojJy2t3vIEjGJjtbaTpU4XvHJ5zMZZykCVekWyaRicnchCQDqqSCGcFUoORiRcQ3mIry2yc/2KHw7davCUtBXqrFeZuZKhCdH91fYOPQInrDSvmj9qPgVuXQRNwppskOUDUGEnGcHjsKvK3ZwmLbKhmOXXDdOpd4c/hdvKHUy3RtBZZJ7c3cO9p0E10yiqrFr9bgJltBhcGh5wtJ6QHtaVXWf3QqAbBattzLMxAe0HL6GUZ1RXUOhUyCmAFPOrRDTIms6lIPNT7D5kFdyzycH2f2g=~-1~-1~-1; bm_sz=7B8DD7CD57EF8D76CE1A96DA461559F0~YAAQtJbTZ+KjADGSAQAA0pvkUhlyoRQEXG+mW6JS1qRIsw5XO+StDkn6tLe7EWOFGWzv5VaUh3O76ZOXciRo65IEPCpem7XCn2m3olU2VS6d3wfnlmpfd+MkxwlOq9+/u3HBnrd2m2peFxu30EGUlcsZ6Aihr4SvwfpG5YzZTdGh37EB3V7g3DdIvvQF7kYUDpZMtqoLP1YbWs6r9Sqtj5ASw3imBQTHJcuDwdcGB+/PGsXxw/9ntTcZ5YHuvvmzm1ett5yBPybQGWHg/PJR8dT2xtxI6YCXmyKZO5ul00+C909QIHhuZWltKBnvYKMAAQr4cIhOAmXxrRWjCo9HvK45EJ9tPWsmS6cdNjvr94uVuQ==~3422517~4539458; x-maersk-tls=tls1.3'\n  },\n  data : {\n    \"terminalId\": \"cfc387ee-e47e-400a-80c5-85d4316f1af9\",\n    \"ids\": [\n      \"TRHU5077494\",\n      \"ZCSU7251800\",\n      \"CRXU1876568\"\n    ],\n    \"ValidRegex\": \"^[a-zA-Z0-9\\\\/-]{1,40}$((?:,)([a-zA-Z0-9\\\\/-]{1,40}))*\"\n  }\n}",
+        "expectedStatus": "200",
+        "isSiteTracker": true
+    },
+    {
+        "_id": "6602ad3d4df6d9651fb53301",
+        "portCode": "EVERGLADES",
+        "aliases": [
+            "EVERGLADES",
+            "Everglades",
+            "PORT EVERGLADES - CROWLEY",
+            "Port Everglades Terminal",
+            "PET TERMINAL",
+            "PET- PORT EVERGLADES",
+            "PET-PORT EVERGLADES",
+            "PET - PORT EVERGLADES",
+            "PET-EVERGLADES",
+            "PET - PORT EVERGLADES TERMINAL",
+            "Port Everglades",
+            "PET"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MIAMI",
+        "terminalCode": 11,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602ae614df6d9651fb5331c",
+        "portCode": "CP EDMONTON",
+        "aliases": [
+            "CP EDMONTON",
+            "CP - EDMONTON",
+            "CP - EDMONTON",
+            "CPR - EDMONTON"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "EDMONTON",
+        "terminalCode": 14,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a2a38bd42cdcc778782e",
+        "portCode": "PCT EVERPORT",
+        "aliases": [
+            "PCT EVERPORT",
+            "PCT - EVERPORT",
+            "Pct - Everport",
+            "PCT PIERCE COUNTY TERMINAL (ETS)",
+            "PCT TACOMA",
+            "PCT - TACOMA"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false,
+        "expectedStatus": "200",
+        "isSiteTracker": false,
+        "config": "{\n  method: 'get',\n  maxBodyLength: Infinity,\n  url: 'https://www.etslink.com/',\n  headers: { }\n};"
+    },
+    {
+        "_id": "6602a2044df6d9651fb530c3",
+        "portCode": "TTI",
+        "aliases": [
+            "TTI",
+            "tti",
+            "TTI (NG)",
+            "hanjin/ tti",
+            "TTI | TOTAL TERMINAL INTERNATIONAL",
+            "HANJIN / TTI",
+            "TTI - LONG BEACH",
+            "Total Terminals International - TTI"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a3f54df6d9651fb530dc",
+        "portCode": "BNSF LA",
+        "aliases": [
+            "BNSF LA",
+            "BNSF - Los Angeles"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a6064df6d9651fb53104",
+        "portCode": "BAYPORT TERMINAL",
+        "aliases": [
+            "BAYPORT TERMINAL",
+            "Bayport Terminal",
+            "Bayport Container Terminal",
+            "BAYPORT CONTAINER TERMINAL",
+            "Port of Houston - Bayport Container Terminal"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "HOUSTON",
+        "terminalCode": 4,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602adf44df6d9651fb53312",
+        "portCode": "CN CALGARY",
+        "aliases": [
+            "CN CALGARY",
+            "CN Calgary",
+            "CN",
+            "CN - CALGARY",
+            "CN - Calgary"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CALGARY",
+        "terminalCode": 13,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a2a38bd42cdcc7787835",
+        "portCode": "TERMINAL 5",
+        "aliases": [
+            "T5 TERMINAL 5",
+            "T5",
+            "Terminal 5",
+            "TERMINAL 5 (SEATTLE,WA)",
+            "TERMINAL 5",
+            "T5 TERMINAL 5 - SSA SEATTLE",
+            "SEATTLE 5",
+            "TERMINAL 5 - SSA SEATTLE",
+            "Terminal 5 - SSA Seattle"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a3f54df6d9651fb530db",
+        "portCode": "BNSF COMMERCE",
+        "aliases": [
+            "BNSF COMMERCE",
+            "BNSF - Commerce",
+            "BNSF COM",
+            "BNSF COMMERCE 26TH STREET",
+            "BNSF - COMMERCE (26TH)",
+            "BNSF C"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a7e04df6d9651fb531b1",
+        "portCode": "TRAPAC JAX",
+        "aliases": [
+            "TRAPAC JAX",
+            "TRAPAC - JACKSONVILLE",
+            "TRAPAC JACKSONVILLE"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "JACKSONVILLE",
+        "terminalCode": 9,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a8624df6d9651fb5329b",
+        "portCode": "BNSF ATLANTA",
+        "aliases": [
+            "BNSF ATLANTA",
+            "BNSF - Atlanta",
+            "BNSF FAIRBURN",
+            "BNSF - FAIRBURN",
+            "BNSF - Atlanta"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "ATLANTA",
+        "terminalCode": 10,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602adf44df6d9651fb53313",
+        "portCode": "CP CALGARY",
+        "aliases": [
+            "CP CALGARY",
+            "CP Calgary",
+            "CP",
+            "CP - CALGARY",
+            "CPR - Calgary"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CALGARY",
+        "terminalCode": 13,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a2a38bd42cdcc7787833",
+        "portCode": "BNSF SEATTLE",
+        "aliases": [
+            "BNSF - SEATTLE",
+            "BNSF - Seattle Intl Gateway (SIG)",
+            "BNSF South Seattle",
+            "BNSF - South Seattle",
+            "BNSF SEATTLE"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602ae614df6d9651fb5331b",
+        "portCode": "CN EDMONTON",
+        "aliases": [
+            "CN EDMONTON",
+            "CN - EDMONTON",
+            "CN - Edmonton"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "EDMONTON",
+        "terminalCode": 14,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a3f54df6d9651fb530da",
+        "portCode": "SHIPPERS TRANSPORT EXPRESS",
+        "aliases": [
+            "SHIPPERS - CARSON",
+            "SHIPPERS CARSON",
+            "Shippers Carson",
+            "SHIPPERS TRANSPORT",
+            "Shippers Transport (Alameda)",
+            "Shippers Transport Carson",
+            "Shippers Transport Express",
+            "SHIPPERS TRANSPORT EXPRESS",
+            "SHIPPERS TRANSPORT EXPRESS - CARSON",
+            "SHIPPERS TRANSPORT EXPRESS - Z773",
+            "SHIPPERS TRANSPORT CARSON",
+            "SHIPPERS TRANSPORT - CARSON"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66039cec8bd42cdcc7787754",
+        "portCode": "CN MALPORT",
+        "aliases": [
+            "CN MALPORT",
+            "CN Malport",
+            "CN MALPORT TERMINAL",
+            "CN MISSISSAUGA",
+            "CN - MISSISSAUGA",
+            "CN - Malport"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "TORONTO",
+        "terminalCode": 15,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66039ea48bd42cdcc77877fd",
+        "portCode": "CSX SPRINGFIELD",
+        "aliases": [
+            "CSX SPRINGFIELD",
+            "CSX - Springfield",
+            "CSX - SPRINGFIELD"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "BOSTON",
+        "terminalCode": 16,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a2a38bd42cdcc7787837",
+        "portCode": "UP TACOMA",
+        "aliases": [
+            "UP Tacoma",
+            "UP TACOMA",
+            "UP - TACOMA",
+            "UP - TacSim"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a5364df6d9651fb530f7",
+        "portCode": "GCT BAYONNE",
+        "aliases": [
+            "GCT BAYONNE",
+            "gct bayonne",
+            "gct bayonne",
+            "GCT Bayonne",
+            "GLOBAL PORT",
+            "GLOBAL (GCT BAYONNE)",
+            "GCT BAYONNE TERMINAL",
+            "GLOBAL",
+            "Global",
+            "GLOBAL BAYONNE",
+            "global bayonne",
+            "GLOBAL BAYONNE TERMINAL",
+            "PORT LIBERTY BAYONNE",
+            "Port Liberty Bayonne",
+            "GLOBAL - PORT LIBERTY",
+            "GCT - BAYONNE"
+        ],
+        "isLogin": true,
+        "hasAppointment": true,
+        "market": "NJNY",
+        "terminalCode": 2,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a5364df6d9651fb530f6",
+        "portCode": "GCT NY",
+        "aliases": [
+            "GCT NY",
+            "gct ny",
+            "gct new york",
+            "nyct",
+            "NYCT GCT",
+            "Port Liberty New York",
+            "PORT LIBERTY NEW YORK",
+            "GCT New York - Staten Island (Howland Hook)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "NJNY",
+        "terminalCode": 2,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a6064df6d9651fb53103",
+        "portCode": "BARBOURS CUT TERMINALS",
+        "aliases": [
+            "BARBOURS CUT TERMINALS",
+            "Barbours Cut Terminal",
+            "Barbours Cut Terminal (BCT)",
+            "Port of Houston- Barbours Cut",
+            "PORT OF HOUSTON BARBOURS",
+            "HOUSTON BARBOURS CUT  TERMINAL",
+            "Port of Houston - Barbours Cut"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "HOUSTON",
+        "terminalCode": 4,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a6ad4df6d9651fb53115",
+        "portCode": "NCT RSA",
+        "aliases": [
+            "NCT RSA",
+            "NCT - North Charleston Terminal",
+            "NCT",
+            "NCT RSA - North Charleston Terminal",
+            "North Charleston Terminal - NCT RSA"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHARLESTON",
+        "terminalCode": 5,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a3f54df6d9651fb530d9",
+        "portCode": "SHIPPERS TRANSPORT LONG BEACH",
+        "aliases": [
+            "SHIPPERS TRANSPORT LONG BEACH",
+            "Shippers Long Beach",
+            "Shippers Transport Long Beach",
+            "Shippers (Long Beach)",
+            "SHIPPERS TRANSPORT - LONG BEACH"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66039cec8bd42cdcc7787758",
+        "portCode": "CN MISC",
+        "aliases": [
+            "CN MISC",
+            "CN MISC (COYOTE)",
+            "CN MISC YARD"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "TORONTO",
+        "terminalCode": 15,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a3f54df6d9651fb530de",
+        "portCode": "BNSF BARSTOW",
+        "aliases": [
+            "BNSF BARSTOW",
+            "BNSF - Barstow",
+            "BNSF - BARSTOW"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a6ad4df6d9651fb53113",
+        "portCode": "WWT",
+        "aliases": [
+            "WWT",
+            "WWT - Wando Welch Terminal",
+            "Wando Welch Terminal - WWT"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHARLESTON",
+        "terminalCode": 5,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602a7044df6d9651fb53119",
+        "portCode": "VIG",
+        "aliases": [
+            "VIG",
+            "VIG - VIRGINIA INTERNATIONAL GATEWAY",
+            "Virginia International Gateway"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "NORFOLK",
+        "terminalCode": 6,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a7044df6d9651fb5311a",
+        "portCode": "NIT",
+        "aliases": [
+            "NIT",
+            "NIT - NORFOLK INTERNATIONAL TERMINAL",
+            "Norfolk International Terminal",
+            "NORFOLK INT'L TERMINAL"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "NORFOLK",
+        "terminalCode": 6,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6602a77b4df6d9651fb53139",
+        "portCode": "OCEAN TERMINAL",
+        "aliases": [
+            "OCEAN TERMINAL",
+            "OCEAN TERMINAL - Savannah",
+            "OT SAVANNAH",
+            "OT - SAVANNAH",
+            "Ocean Terminal"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SAVANNAH",
+        "terminalCode": 8,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6602ad3d4df6d9651fb532ff",
+        "portCode": "FIT TERMINAL",
+        "aliases": [
+            "FIT TERMINAL",
+            "FIT",
+            "FIT - FLORIDA INTERNATIONAL TERMINAL",
+            "Florida International Terminal"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MIAMI",
+        "terminalCode": 11,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true,
+        "config": "{\n  method: 'get',\n  maxBodyLength: Infinity,\n  url: 'https://forecast.fitpev.com/fc-FIT/',\n  headers: { }\n}",
+        "expectedStatus": "200",
+        "isSiteTracker": false
+    },
+    {
+        "_id": "6603a2a38bd42cdcc7787831",
+        "portCode": "TERMINAL 30",
+        "aliases": [
+            "TERMINAL 30",
+            "Terminal 30 - SSA Seattle",
+            "T30 TERMINAL 30 - SSA SEATTLE",
+            "SEATTLE 30",
+            "TERMINAL 30 - SSA SEATTLE"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6603a6498bd42cdcc7787873",
+        "portCode": "BNSF ST PAUL",
+        "aliases": [
+            "BNSF - St. Paul (Midway)",
+            "BNSF - St. Paul",
+            "BNSF ST PAUL",
+            "BNSF - ST PAUL"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MINNESOTA",
+        "terminalCode": 20,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a4248bd42cdcc778784e",
+        "portCode": "CN JOLIET",
+        "aliases": [
+            "CN - Joliet",
+            "CN JOLIET"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a4248bd42cdcc7787849",
+        "portCode": "BNSF LOGISTIC PARK",
+        "aliases": [
+            "BNSF Logistics Park",
+            "BNSF - Logistics Park",
+            "BNSF LOGISTICS PARK-CHICAGO",
+            "BNSF Railway - Logistics Park Chicago",
+            "CHICAGO BNSF LOGISTICS PARK JOLIET",
+            "BNSF LOGISTIC PARK",
+            "BNSF ELWOOD",
+            "BNSF - ELWOOD"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a94b8bd42cdcc77878a0",
+        "portCode": "GCT VANTERM",
+        "aliases": [
+            "VANTERM",
+            "GCT VANTERM",
+            "VANTERM REFUSED",
+            "GCT VANTERM - GCT CANADA",
+            "VANTERM -GCT",
+            "VANTERM LOCAL",
+            "TSI TERMINALSYSTEMS INC (VANTERM)",
+            "VANTERM - GCT CANADA",
+            "Vanterm"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "VANCOUVER",
+        "terminalCode": 23,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a4248bd42cdcc7787850",
+        "portCode": "CPR SCHILLER PARK",
+        "aliases": [
+            "CPR - Schiller Park",
+            "CP SCHILLER PARK",
+            "CP - Schiller Park",
+            "CPR SCHILLER PARK"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603add38bd42cdcc77878ea",
+        "portCode": "BNSF OMAHA",
+        "aliases": [
+            "BNSF OMAHA",
+            "BNSF - OMAHA"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "NEBRASKA",
+        "terminalCode": 31,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603d32bdbb9bdab878f25ec",
+        "portCode": "NIT",
+        "aliases": [
+            "NIT",
+            "NIT - NORFOLK INTERNATIONAL TERMINAL",
+            "Norfolk International Terminal",
+            "NORFOLK INT'L TERMINAL"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "VIRGINIA",
+        "terminalCode": 99,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6603a6498bd42cdcc7787872",
+        "portCode": "CP MINNEAPOLIS",
+        "aliases": [
+            "CP MINNEAPOLIS",
+            "CP - Minneapolis",
+            "CPR - Minneapolis"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MINNESOTA",
+        "terminalCode": 20,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a7e58bd42cdcc7787885",
+        "portCode": "CN MONTREAL",
+        "aliases": [
+            "CN MONTREAL",
+            "CN Montreal",
+            "CN LACHINE",
+            "CN - MONTREAL",
+            "CN - Montreal"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MONTREAL",
+        "terminalCode": 22,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603ac088bd42cdcc77878d5",
+        "portCode": "UP TUCSON",
+        "aliases": [
+            "UP TUCSON",
+            "UP - TUCSON"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "ARIZONA",
+        "terminalCode": 29,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603ac948bd42cdcc77878d9",
+        "portCode": "UP LAS VEGAS",
+        "aliases": [
+            "UP LAS VEGAS",
+            "UP - LAS VEGAS"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "NEVADA",
+        "terminalCode": 30,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603ae948bd42cdcc77878f9",
+        "portCode": "UP KANSAS CITY",
+        "aliases": [
+            "UP KANSAS CITY",
+            "UP - KANSAS CITY",
+            "UP - Neff Yard"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "KANSAS_CITY",
+        "terminalCode": 34,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603af768bd42cdcc7787905",
+        "portCode": "CSX CHARLOTTE",
+        "aliases": [
+            "CSX CHARLOTTE",
+            "CSX - CHARLOTTE",
+            "CSX - Hovis Road"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "NORTH_CAROLINA",
+        "terminalCode": 36,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a6498bd42cdcc7787871",
+        "portCode": "CN DULUTH",
+        "aliases": [
+            "CN DULUTH",
+            "CN - Duluth"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MINNESOTA",
+        "terminalCode": 20,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a2a38bd42cdcc7787832",
+        "portCode": "WUT",
+        "aliases": [
+            "WUT",
+            "Wut",
+            "WUT WASHINGTON UNITED TERMINAL MARINE",
+            "WUT - WASHINGTON UNITED TERMINAL MARINE",
+            "WUT - WASHINGTON UNITED TERMINAL",
+            "Washington United Terminals (WUT)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6603aa068bd42cdcc77878b1",
+        "portCode": "BNSF DENVER",
+        "aliases": [
+            "BNSF DENVER",
+            "BNSF - DENVER"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DENVER",
+        "terminalCode": 25,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603aaf98bd42cdcc77878bd",
+        "portCode": "UP HUTCHINS",
+        "aliases": [
+            "UP HUTCHINS",
+            "UP - HUTCHINS",
+            "UP - DALLAS",
+            "UP DALLAS",
+            "UP - Dallas Intermodal Terminal (DIT)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DALLAS_FW",
+        "terminalCode": 26,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a5988bd42cdcc7787861",
+        "portCode": "EVERPORT OAK",
+        "aliases": [
+            "EVERPORT OAK",
+            "Everport Oak",
+            "EVERPORT OAKLAND",
+            " EVERPORT - OAKLAND",
+            "Ben E. Nutter (Evergreen)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OAKLAND",
+        "terminalCode": 19,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6603a7e58bd42cdcc7787887",
+        "portCode": "TERMONT SECTION 68",
+        "aliases": [
+            "TERMONT SECTION 68",
+            "Maisonneuve - Termont 68",
+            "TERMONT - SECTION 68",
+            "TERMONT - SECTION 68",
+            "TERMONT MONTREAL",
+            "TERMONT 68 MONTREAL",
+            "TERMONT - 68 - MONTREAL",
+            "Termont 68 Maisonneuve"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "MONTREAL",
+        "terminalCode": 22,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603d32bdbb9bdab878f25eb",
+        "portCode": "VIG",
+        "aliases": [
+            "VIG"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "VIRGINIA",
+        "terminalCode": 99,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6603ae358bd42cdcc77878f1",
+        "portCode": "BNSF EL PASO",
+        "aliases": [
+            "BNSF EL PASO",
+            "BNSF - EL PASO"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "GREATER_TX",
+        "terminalCode": 32,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603af0c8bd42cdcc77878ff",
+        "portCode": "APM GOTHENBURG",
+        "aliases": [
+            "APM GOTHENBURG"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "EUROPE",
+        "terminalCode": 3,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603af0c8bd42cdcc77878fe",
+        "portCode": "PSA",
+        "aliases": [
+            "PSA KAAI",
+            "PSA MPET KAAI 1742",
+            "PSA KAAI 913",
+            "PSA KAAI 869",
+            "PSA",
+            "PSA KAAI 1742",
+            "PSA KAAI 1718"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "EUROPE",
+        "terminalCode": 3,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a6c78bd42cdcc778787b",
+        "portCode": "UP MEMPHIS",
+        "aliases": [
+            "UP MEMPHIS",
+            "UP MEMPHIS  (MARION)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MEMPHIS",
+        "terminalCode": 21,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603aaf98bd42cdcc77878bf",
+        "portCode": "BNSF HASLET",
+        "aliases": [
+            "BNSF HASLET",
+            "BNSF - HASLET",
+            "BNSF - DALLAS",
+            "BNSF DALLAS",
+            "BNSF - Alliance"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DALLAS_FW",
+        "terminalCode": 26,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603ac948bd42cdcc77878da",
+        "portCode": "UP SPARKS",
+        "aliases": [
+            "UP SPARKS",
+            "UP - SPARKS",
+            "UP - Sparks"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "NEVADA",
+        "terminalCode": 30,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a4248bd42cdcc778784b",
+        "portCode": "BNSF CORWITH",
+        "aliases": [
+            "BNSF - Corwith",
+            "BNSF Corwith",
+            "BNSF CORWITH",
+            "BNSF CHICAGO",
+            "BNSF - CHICAGO"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a4248bd42cdcc778784f",
+        "portCode": "CPR BENSENVILLE",
+        "aliases": [
+            "CPR - Bensenville",
+            "CP BENSENVILLE",
+            "CP Bensenville Intermodal Terminal",
+            "CPR BENSENVILLE",
+            "CP FRANKLIN PARK",
+            "CP - FRANKLIN PARK"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a4248bd42cdcc7787851",
+        "portCode": "UP CHICAGO",
+        "aliases": [
+            "UP - JOLIET (GLOBAL 4)",
+            "UP - JOLIET",
+            "UP CHICAGO",
+            "UP JOLIET"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a94b8bd42cdcc778789f",
+        "portCode": "GCT DELTAPORT",
+        "aliases": [
+            "DELTAPORT",
+            "GCT DELTAPORT",
+            "DELTAPORT HIGHWAY",
+            "DELTAPORT LOCAL",
+            "DELTAPORT - GCT CANADA"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "VANCOUVER",
+        "terminalCode": 23,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a9b08bd42cdcc77878ac",
+        "portCode": "BNSF DETROIT",
+        "aliases": [
+            "BNSF DETROIT"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DETROIT",
+        "terminalCode": 24,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603abb68bd42cdcc77878cc",
+        "portCode": "NS BUFFALO",
+        "aliases": [
+            "NS BUFFALO",
+            "NS - BUFFALO",
+            "NS - Bison Yard"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "GREATER_NY",
+        "terminalCode": 28,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a4248bd42cdcc778784d",
+        "portCode": "CN HARVEY",
+        "aliases": [
+            "CN - Harvey",
+            "CN HARVEY"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a4248bd42cdcc778784a",
+        "portCode": "BNSF CICERO",
+        "aliases": [
+            "BNSF - Cicero",
+            "BNSF Cicero",
+            "BNSF CICERO"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a7e58bd42cdcc7787886",
+        "portCode": "CP MONTREAL",
+        "aliases": [
+            "CP MONTREAL",
+            "CP Montreal",
+            "CP LACHINE",
+            "CP - LACHINE",
+            "CPR - Lachine"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MONTREAL",
+        "terminalCode": 22,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a9b08bd42cdcc77878ab",
+        "portCode": "CP DETROIT",
+        "aliases": [
+            "cp rail",
+            "CP RAIL",
+            "CP Rail - Detroit",
+            "CP Railway Detroit Intermodal Terminal",
+            "CP DETROIT",
+            "CP - DETROIT"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DETROIT",
+        "terminalCode": 24,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a9b08bd42cdcc77878aa",
+        "portCode": "CN RAIL",
+        "aliases": [
+            "CN Rail",
+            "CN Rail"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DETROIT",
+        "terminalCode": 24,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603ab498bd42cdcc77878c6",
+        "portCode": "UP SALT LAKE CITY",
+        "aliases": [
+            "UP SALT LAKE CITY",
+            "UP - SALT LAKE CITY"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "UTAH",
+        "terminalCode": 27,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603abb68bd42cdcc77878cb",
+        "portCode": "CSX BUFFALO",
+        "aliases": [
+            "CSX BUFFALO",
+            "CSX - BUFFALO",
+            "CSX BLASDELL",
+            "CSX - BLASDELL",
+            "CSX - Buffalo ICTF",
+            "ICTF - BUFFALO"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "GREATER_NY",
+        "terminalCode": 28,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603ac088bd42cdcc77878d4",
+        "portCode": "BNSF PHOENIX",
+        "aliases": [
+            "BNSF PHOENIX",
+            "BNSF - PHOENIX"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "ARIZONA",
+        "terminalCode": 29,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a5988bd42cdcc7787863",
+        "portCode": "BNSF STOCKTON",
+        "aliases": [
+            "BNSF STOCKTON",
+            "BNSF - Stockton"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OAKLAND",
+        "terminalCode": 19,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a5988bd42cdcc7787864",
+        "portCode": "UP FRENCH CAMP",
+        "aliases": [
+            "UP - French Camp",
+            "UP FRENCH CAMP",
+            "UP LATHROP",
+            "UP - LATHROP",
+            "UP - Lathrop"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OAKLAND",
+        "terminalCode": 19,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a6c78bd42cdcc778787a",
+        "portCode": "CN MEMPHIS",
+        "aliases": [
+            "CN Memphis",
+            "CN Intermodal Gateway Memphis",
+            "CN - Intermodal Gateway Memphis",
+            "CN MEMPHIS",
+            "CN MEMPHIS INTERMODAL GATEWAY",
+            "CN - MEMPHIS"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MEMPHIS",
+        "terminalCode": 21,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603aaf98bd42cdcc77878be",
+        "portCode": "UP MESQUITE",
+        "aliases": [
+            "UP MESQUITE",
+            "UP - MESQUITE"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DALLAS_FW",
+        "terminalCode": 26,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a7e58bd42cdcc7787889",
+        "portCode": "MGT CAST",
+        "aliases": [
+            "MGT CAST",
+            "MGT - CAST",
+            "MGT - CAST SECTION 77",
+            "Cast Shed 77 (MGT)",
+            "CAST - MONTREAL GATEWAY TERMINAL",
+            "Port of Montreal - Cast Terminal"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MONTREAL",
+        "terminalCode": 22,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a7e58bd42cdcc7787888",
+        "portCode": "TERMONT SECTION 52",
+        "aliases": [
+            "TERMONT SECTION 52",
+            "Viau - Termont 52",
+            "TERMONT-SECTION 52",
+            "TERMONT - SECTION 52",
+            "TERMONT 52 MONTREAL",
+            "TERMONT - 52 - MONTREAL",
+            "Termont 52 Viau Terminal"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "MONTREAL",
+        "terminalCode": 22,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603ae658bd42cdcc77878f5",
+        "portCode": "NS LOUISVILLE",
+        "aliases": [
+            "NS LOUISVILLE",
+            "NS - LOUISVILLE",
+            "NS APPLIANCE PARK",
+            "NS - APPLIANCE PARK"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "KENTUCKY",
+        "terminalCode": 33,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a4248bd42cdcc778784c",
+        "portCode": "BNSF WILLOW SPRING",
+        "aliases": [
+            "BNSF Willow Springs",
+            "BNSF - Willow Springs",
+            "BNSF WILLOW SPRING",
+            "BNSF HODGKINS",
+            "BNSF - HODGKINS"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a5988bd42cdcc7787862",
+        "portCode": "BNSF OAK",
+        "aliases": [
+            "BNSF OAK",
+            "BNSF - OAK",
+            "BNSF OAKLAND",
+            "BNSF - OAKLAND",
+            "BNSF - Oakland International Gateway"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OAKLAND",
+        "terminalCode": 19,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a94b8bd42cdcc77878a2",
+        "portCode": "DPWORLD CENTERM",
+        "aliases": [
+            "CENTERM",
+            "DPWORLD CENTERM",
+            "CENTERM DEAD RUN",
+            "DP CENTERM",
+            "DP WORLD VANCOUVER",
+            "DP WORLD-CENTERM CONTAINER TERMINAL",
+            "VANCOUVER PORT CENTERM -DP WORLD (3380)",
+            "CENTERM TERMINAL"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "VANCOUVER",
+        "terminalCode": 23,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603ae358bd42cdcc77878f0",
+        "portCode": "UP EL PASO",
+        "aliases": [
+            "UP EL PASO",
+            "UP - EL PASO"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "GREATER_TX",
+        "terminalCode": 32,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603af0c8bd42cdcc77878fd",
+        "portCode": "DPWORLD",
+        "aliases": [
+            "DP WORLD",
+            "DPWORLD",
+            "DPWORLD K1700",
+            "DP PORT",
+            "DP ALL",
+            "DP WORLD 1700",
+            "EDS KAAI 1791",
+            "DP WORLD 1791"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "EUROPE",
+        "terminalCode": 3,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a5988bd42cdcc778785f",
+        "portCode": "TRAPAC OAK",
+        "aliases": [
+            "TRAPAC OAK",
+            "Trapac Oak",
+            "TRAPAC OAKLAND",
+            "TRAPAC_OAKLAND",
+            "TRAPAC-OAK",
+            "Trapac Oakland",
+            "TRAPAC - OAKLAND"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "OAKLAND",
+        "terminalCode": 19,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "6603a94b8bd42cdcc778789d",
+        "portCode": "CP VANCOUVER",
+        "aliases": [
+            "CP VANCOUVER",
+            "CP - VANCOUVER",
+            "CPR - Pitt Meadows",
+            "CP PITT MEADOWS"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "VANCOUVER",
+        "terminalCode": 23,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a94b8bd42cdcc778789e",
+        "portCode": "BNSF VANCOUVER",
+        "aliases": [
+            "BNSF VANCOUVER",
+            "BNSF - Vancouver",
+            "BNSF NEW WESTMINSTER",
+            "BNSF - NEW WESTMINSTER,"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "VANCOUVER",
+        "terminalCode": 23,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a94b8bd42cdcc778789c",
+        "portCode": "CN VANCOUVER",
+        "aliases": [
+            "CN VANCOUVER",
+            "CN - Vancouver"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "VANCOUVER",
+        "terminalCode": 23,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603aa068bd42cdcc77878b0",
+        "portCode": "UP DENVER",
+        "aliases": [
+            "UP DENVER",
+            "UP - DENVER"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DENVER",
+        "terminalCode": 25,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a6c78bd42cdcc7787879",
+        "portCode": "BNSF MEMPHIS",
+        "aliases": [
+            "BNSF - Memphis (Shelby)",
+            "BNSF Memphis",
+            "BNSF MEMPHIS"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MEMPHIS",
+        "terminalCode": 21,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a94b8bd42cdcc77878a1",
+        "portCode": "DPWORLD FSD",
+        "aliases": [
+            "DPWORLD FSD",
+            "FSD (FRASER SURREY DOCKS)",
+            "FRASER SURREY DOCK",
+            "FRASER SURREY DOCKS-DO NOT USE",
+            "FRASER SURREY DOCKS",
+            "DP WORLD FRASER SURREY DOCK",
+            "FRASER SURREY",
+            "FRASER SURREY - DP WORLD,"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "VANCOUVER",
+        "terminalCode": 23,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a5988bd42cdcc7787860",
+        "portCode": "OICT",
+        "aliases": [
+            "OICT",
+            "Oict",
+            "OICT OAKLAND",
+            "OICT - OAKLAND INTERNATIONAL CONTAINER TERMINAL",
+            "Oakland International Container Terminal",
+            "OICT (SSA)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OAKLAND",
+        "terminalCode": 19,
+        "__v": 0,
+        "appointmentRequirement": {
+            "isLicencePlateNumberRequired": true
+        },
+        "hasTracking": true,
+        "hasEmpties": true,
+        "config": "{\n  method: 'get',\n  maxBodyLength: Infinity,\n  url: 'https://b58.tideworks.com/fc-OICT/default.do',\n  headers: { \n    'Cookie': 'BNI_JSESSIONID=0000000000000000000000003209a8c00000921f'\n  }\n}",
+        "expectedStatus": "200",
+        "isSiteTracker": true
+    },
+    {
+        "_id": "6603a5988bd42cdcc7787865",
+        "portCode": "UP OAKLAND",
+        "aliases": [
+            "UP OAKLAND",
+            "UP - Oakland",
+            "UP - Middle Harbor"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OAKLAND",
+        "terminalCode": 19,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603a7e58bd42cdcc778788a",
+        "portCode": "MGT RACINE",
+        "aliases": [
+            "MGT RACINE",
+            "MGT - RACINE",
+            "MGT - RACINE SECTION 62",
+            "RACINE - MONTREAL GATEWAY TERMINAL",
+            "Racine Terminal (Montreal)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MONTREAL",
+        "terminalCode": 22,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603aaf98bd42cdcc77878c0",
+        "portCode": "KCS WYLIE",
+        "aliases": [
+            "KCS WYLIE",
+            "KCS - WYLIE",
+            "KCS - Wylie (WIT)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DALLAS_FW",
+        "terminalCode": 26,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6603abb68bd42cdcc77878ca",
+        "portCode": "NS MECHANICVILLE",
+        "aliases": [
+            "NS MECHANICVILLE",
+            "NS - MECHANICVILLE",
+            "NS - ALBANY",
+            "NS ALBANY",
+            "NS - Albany (Mechanicville ramp)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "GREATER_NY",
+        "terminalCode": 28,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "660b9212061fba8f80007c52",
+        "portCode": "UP LONG BEACH",
+        "aliases": [
+            "UP ICTF",
+            "UP LONG BEACH",
+            "UP - LONG BEACH",
+            "UP - ICTF",
+            "UP ICTF"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "LALB",
+        "terminalCode": 1,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667447c6af2cf0a6100e824e",
+        "portCode": "NS CINCINNATI",
+        "aliases": [
+            "NS CINCINNATI",
+            "NS - CINCINNATI",
+            "NS - Cincinnati"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OHIO",
+        "terminalCode": 39,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667447c6af2cf0a6100e8250",
+        "portCode": "NS MAPLE HEIGHTS",
+        "aliases": [
+            "NS MAPLE HEIGHTS",
+            "NS - MAPLE HEIGHTS",
+            "NS - Maple Heights"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OHIO",
+        "terminalCode": 39,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6690af5f6bdf7fb1b54bf15c",
+        "portCode": "NS CHICAGO S WESTERN",
+        "aliases": [
+            "NS CHICAGO S WESTERN",
+            "NS - CHICAGO (S WESTERN AVE)",
+            "NS - Landers 79th"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66fa90e3814bf3b30965be83",
+        "portCode": "NS DETROIT",
+        "aliases": [
+            "NS DETROIT",
+            "NS - DETROIT",
+            "Norfolk Southern Detroit"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DETROIT",
+        "terminalCode": 24,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6673e8e8af2cf0a6100e765e",
+        "portCode": "CP REGINA DEWDNEY",
+        "aliases": [
+            "CP REGINA DEWDNEY",
+            "CP - REGINA (DEWDNEY)",
+            "CPR - Regina"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "REGINA",
+        "terminalCode": 37,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667447c6af2cf0a6100e8252",
+        "portCode": "NS TOLEDO",
+        "aliases": [
+            "NS TOLEDO",
+            "NS - TOLEDO",
+            "NS - Toledo"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OHIO",
+        "terminalCode": 39,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66bc70747046c440686f3b38",
+        "portCode": "CSX BEDFORD PARK",
+        "aliases": [
+            "CSX - BEDFORD PARK",
+            "CSX BEDFORD PARK",
+            "CSX - BEDFORD PARK",
+            "CSX BEDFORD PARK",
+            "CSX - BEDFORD PARK"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66a05f5287c0fb2773aa3f83",
+        "portCode": "EMODAL",
+        "aliases": [
+            "EMODAL"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MIAMI",
+        "terminalCode": 11,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66a05d0087c0fb2773aa3f82",
+        "portCode": "EMODAL",
+        "aliases": [
+            "EMODAL"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OAKLAND",
+        "terminalCode": 19,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66e7c42e29d65d8cffb22174",
+        "portCode": "COLUMBIA CONTAINER SERVICES 1155",
+        "aliases": [
+            "COLUMBIA CONTAINER SERVICES 1155",
+            "columbia container services 1155",
+            "CCS 1155",
+            "COLUMBIA 1155"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "NJNY",
+        "terminalCode": 2,
+        "hasTracking": false,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66fa90e3814bf3b30965be85",
+        "portCode": "CSX KANSAS CITY",
+        "aliases": [
+            "CSX KANSAS CITY",
+            "CSX - KANSAS CITY",
+            "CSX - Kansas City"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "KANSAS_CITY",
+        "terminalCode": 34,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667c2f0e4e5686f22224a4d1",
+        "portCode": "CSX CHICAGO 59TH",
+        "aliases": [
+            "CSX CHICAGO 59TH",
+            "CSX - CHICAGO (59TH)",
+            "CSX - 59th Street",
+            "CSX CHICAGO 59TH",
+            "CSX - CHICAGO (59TH)"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "CHICAGORAILYARDS",
+        "terminalCode": 18,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "666bf4ffaf2cf0a6100db907",
+        "portCode": "UP MINNEAPOLIS",
+        "aliases": [
+            "UP MINNEAPOLIS",
+            "UP - Minneapolis"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "MINNESOTA",
+        "terminalCode": 20,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "666c06beaf2cf0a6100dbb0f",
+        "portCode": "CSX FAIRBURN",
+        "aliases": [
+            "CSX FAIRBURN",
+            "CSX - FAIRBURN",
+            "CSX FAIRBURN GA"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "ATLANTA",
+        "terminalCode": 10,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667447c6af2cf0a6100e824b",
+        "portCode": "CSX COLUMBUS",
+        "aliases": [
+            "CSX COLUMBUS",
+            "CSX - COLUMBUS",
+            "CSX - Columbus"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "OHIO",
+        "terminalCode": 39,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667447c6af2cf0a6100e824d",
+        "portCode": "CSX NORTH BALTIMORE",
+        "aliases": [
+            "CSX NORTH BALTIMORE",
+            "CSX - NORTH BALTIMORE",
+            "CSX - Northwest Ohio ICTF"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "OHIO",
+        "terminalCode": 39,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66fa9183814bf3b30965be89",
+        "portCode": "BNSF EDGERTON",
+        "aliases": [
+            "BNSF RAIL MAIN",
+            "BNSF EDGERTON",
+            "BNSF - EDGERTON",
+            "BNSF - Logistics Park-KC",
+            "BNSF - KANSAS CITY"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "KANSAS_CITY",
+        "terminalCode": 34,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66fa90e3814bf3b30965be84",
+        "portCode": "NS KANSAS CITY",
+        "aliases": [
+            "NS KANSAS CITY",
+            "NS - KANSAS CITY",
+            "NS - Voltz Yard"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "KANSAS_CITY",
+        "terminalCode": 34,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66fa90e3814bf3b30965be86",
+        "portCode": "UP COUNCIL BLUFFS",
+        "aliases": [
+            "UP COUNCIL BLUFFS",
+            "UP - COUNCIL BLUFFS",
+            "UP - OMAHA"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "NEBRASKA",
+        "terminalCode": 31,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66fa90e3814bf3b30965be82",
+        "portCode": "NS DETROIT",
+        "aliases": [
+            "NS DETROIT",
+            "NS - DETROIT",
+            "Norfolk Southern Detroit"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "DETROIT",
+        "terminalCode": 24,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6673e839af2cf0a6100e764d",
+        "portCode": "CN SASKATOON",
+        "aliases": [
+            "CN SASKATOON",
+            "CN - SASKATOON",
+            "CN - Chappell Yard"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SASKATOON",
+        "terminalCode": 38,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667447c6af2cf0a6100e824f",
+        "portCode": "NS COLUMBUS",
+        "aliases": [
+            "NS COLUMBUS",
+            "NS - COLUMBUS",
+            "NS - Rickenbacker"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OHIO",
+        "terminalCode": 39,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6673e8e8af2cf0a6100e765d",
+        "portCode": "CP REGINA FLEMING",
+        "aliases": [
+            "CP REGINA FLEMING",
+            "CP - REGINA (FLEMING)",
+            "CPR - Regina (opened 2013)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "REGINA",
+        "terminalCode": 37,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66fa90e3814bf3b30965be81",
+        "portCode": "CSX DETROIT",
+        "aliases": [
+            "CSX DETROIT",
+            "CSX - DETROIT",
+            "CSX INTERMODAL - DETROIT"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "DETROIT",
+        "terminalCode": 24,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "6673e8e8af2cf0a6100e765f",
+        "portCode": "CN REGINA",
+        "aliases": [
+            "CN REGINA",
+            "CN - REGINA",
+            "CN - Regina"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "REGINA",
+        "terminalCode": 37,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667447c6af2cf0a6100e8249",
+        "portCode": "CSX CINCINNATI",
+        "aliases": [
+            "CSX CINCINNATI",
+            "CSX - CINCINNATI",
+            "CSX - Queensgate"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "OHIO",
+        "terminalCode": 39,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66e7c12c29d65d8cffb22173",
+        "portCode": "COLUMBIA CONTAINER SERVICES 1100",
+        "aliases": [
+            "COLUMBIA CONTAINER SERVICES 1100",
+            "COLUMBIA CONTAINER SERVICES",
+            "COLUMBIA CONTAINER SERVICES 1100",
+            "columbia container services 1100",
+            "COLUMBIA CONTAINER SERVICES",
+            "CCS 1100",
+            "COLUMBIA",
+            "COLUMBIA YARD",
+            "COLUMBIA C.S",
+            "COLUMBIA CONTAINER",
+            "C&C MARSH STREET DEPOT",
+            "COLUMBIA EMPTY DEPOT",
+            "COLUMBIA CONTAINER SVC",
+            "COLUMBIA DEPOT"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "NJNY",
+        "terminalCode": 2,
+        "hasTracking": false,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667447c6af2cf0a6100e824c",
+        "portCode": "CSX MARION",
+        "aliases": [
+            "CSX MARION",
+            "CSX - MARION",
+            "CSX - Marion"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "OHIO",
+        "terminalCode": 39,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66a05ba287c0fb2773aa3f81",
+        "portCode": "EMODAL",
+        "aliases": [
+            "EMODAL"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "SEATTLETACOMA",
+        "terminalCode": 17,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667447c6af2cf0a6100e8251",
+        "portCode": "NS SHARONVILLE",
+        "aliases": [
+            "NS SHARONVILLE",
+            "NS - SHARONVILLE",
+            "NS - Sharonville"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "OHIO",
+        "terminalCode": 39,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66c8673d5191e5f23cdafecf",
+        "portCode": "CSX KEARNY",
+        "aliases": [
+            "CSX KEARNY",
+            "CSX - KEARNY",
+            "CSX - Kearny"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "NJNY",
+        "terminalCode": 2,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66cd784c2ca5c49c591afa2d",
+        "portCode": "BLOUNT ISLAND TERMINAL",
+        "aliases": [
+            "BLOUNT ISLAND TERMINAL",
+            "BLOUNT ISLAND TERMINAL / SSA ATLANTIC",
+            "(JAX) BLOUNT ISLAND TERMINAL",
+            "SSA",
+            "SSA - JAX",
+            "SSA - JACKSONVILLE",
+            "Blount Island - SSA Marine",
+            "SSA JAX",
+            "SSA JACKSONVILLE",
+            "Blount Island Terminal"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "JACKSONVILLE",
+        "terminalCode": 9,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": true
+    },
+    {
+        "_id": "66f5537d392dff6c76deb007",
+        "portCode": "CLP CONRICH",
+        "aliases": [
+            "CLP",
+            "CLP CONRICH",
+            "CN - CALGARY LOGISTICS PARK (CLP)",
+            "CN - Calgary Logistics Park (CLP)"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "CALGARY",
+        "terminalCode": 13,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "667447c6af2cf0a6100e824a",
+        "portCode": "CSX CLEVELAND",
+        "aliases": [
+            "CSX CLEVELAND",
+            "CSX - CLEVELAND",
+            "CSX - Collinwood"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "OHIO",
+        "terminalCode": 39,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "66e12ad599d077d4e3053f4b",
+        "portCode": "UP HOUSTON",
+        "aliases": [
+            "UP",
+            "UP HOUSTON",
+            "UP - HOUSTON",
+            "UP - Settagast Yard",
+            "UPRR-Houston"
+        ],
+        "isLogin": true,
+        "hasAppointment": false,
+        "market": "HOUSTON",
+        "terminalCode": 4,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    },
+    {
+        "_id": "673b07c41fcf7f85871427d4",
+        "portCode": "SEAGIRT",
+        "aliases": [
+            "SEAGIRT",
+            "SEAGIRT MARINE TERMINAL",
+            "Seagirt Marine Terminal - PORT OF BALTIMORE",
+            "Seagirt Marine Terminal"
+        ],
+        "isLogin": false,
+        "hasAppointment": false,
+        "market": "BALTIMORE",
+        "terminalCode": 41,
+        "__v": 0,
+        "hasTracking": true,
+        "hasEmpties": false
+    }
+]

@@ -1,0 +1,21 @@
+name: ECS Deployment
+on: 
+ push:
+  branches:
+    - development
+    - PRODUCTION
+
+jobs:
+    development:
+        if: github.ref == vars.DEV_BRANCH
+        uses: PortPro-Technologies-Inc/portpro-tf-app/.github/workflows/ecs-deploy.yml@main
+        with: 
+          environment: development
+          URL: https://dispatch-improvement.dev.portpro.io/                  
+          ECS_CLUSTER: portpro-dev-cluster
+          ECS_SERVICE: dispatch-improvement-service          
+          ECS_TASK_DEFINITION: dispatch-improvement-taskdefinition                                             
+          CONTAINER_NAME: dispatch-improvement
+          ECR_REPOSITORY: dispatch-improvement.dev.portpro.io
+          AWS_SECRETS_MANAGER_ID: dispatch-improvement.dev.portpro.io
+        secrets: inherit
