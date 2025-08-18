@@ -57,7 +57,10 @@ CARRIER_CONFIGS = {
             'MAX_WAITING_TIME_BETWEEN_NODES': 30  # in minutes
         },
         'last_visit_locations': [
-            '669e99cbace8bcfd64a5b656',
+            '669e99cbace8bcfd64a5b656', # SLG
+            '661800ed8b11526e42dcf208', # LINEAGE LOGISTICS #2
+            '66196336e092a76d62cf1a14', # CITY FURNITURE
+            '67d1ed387417a281cccb522d', # SENTURY TIRE USA
         ]
     },
     # RoadEx America

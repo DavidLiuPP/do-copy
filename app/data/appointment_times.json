@@ -19665,7 +19665,7 @@
       "Sunday"
     ],
     "mandatory_appt": {
-      "start_time": "08:00",
+      "start_time": "06:00",
       "end_time": "17:00"
     }
   },
@@ -19729,7 +19729,7 @@
       "Sunday"
     ],
     "mandatory_appt": {
-      "start_time": "07:00",
+      "start_time": "06:00",
       "end_time": "15:00"
     }
   },
@@ -20257,7 +20257,7 @@
       "Friday"
     ],
     "mandatory_appt": {
-      "start_time": "08:30",
+      "start_time": "06:00",
       "end_time": "17:00"
     }
   },
@@ -20503,7 +20503,7 @@
       "Friday"
     ],
     "mandatory_appt": {
-      "start_time": "07:00",
+      "start_time": "06:00",
       "end_time": "16:00"
     }
   },
@@ -22194,7 +22194,7 @@
       "Sunday"
     ],
     "mandatory_appt": {
-      "start_time": "08:00",
+      "start_time": "06:00",
       "end_time": "17:00"
     }
   },
@@ -22208,7 +22208,7 @@
       "Friday"
     ],
     "mandatory_appt": {
-      "start_time": "07:00",
+      "start_time": "06:00",
       "end_time": "17:00"
     }
   },
@@ -22224,7 +22224,7 @@
       "Sunday"
     ],
     "mandatory_appt": {
-      "start_time": "08:00",
+      "start_time": "06:00",
       "end_time": "17:00"
     }
   },
@@ -23863,7 +23863,7 @@
       "Friday"
     ],
     "mandatory_appt": {
-      "start_time": "07:00",
+      "start_time": "06:00",
       "end_time": "16:00"
     }
   },
@@ -23877,7 +23877,7 @@
       "Friday"
     ],
     "mandatory_appt": {
-      "start_time": "08:00",
+      "start_time": "06:00",
       "end_time": "17:00"
     }
   },
@@ -24160,8 +24160,8 @@
       "Sunday"
     ],
     "mandatory_appt": {
-      "start_time": "08:00",
-      "end_time": "17:00"
+      "start_time": "00:00",
+      "end_time": "23:59"
     }
   },
   {
@@ -24598,7 +24598,7 @@
       "Friday"
     ],
     "mandatory_appt": {
-      "start_time": "07:00",
+      "start_time": "06:00",
       "end_time": "19:00"
     }
   },
@@ -24655,7 +24655,7 @@
       "Friday"
     ],
     "mandatory_appt": {
-      "start_time": "08:00",
+      "start_time": "06:00",
       "end_time": "16:30"
     }
   },
@@ -24982,7 +24982,7 @@
       "Friday"
     ],
     "mandatory_appt": {
-      "start_time": "08:00",
+      "start_time": "06:00",
       "end_time": "15:00"
     }
   },
@@ -25633,7 +25633,7 @@
       "Sunday"
     ],
     "mandatory_appt": {
-      "start_time": "08:00",
+      "start_time": "06:00",
       "end_time": "17:00"
     }
   },
@@ -27125,6 +27125,132 @@
     "mandatory_appt": {
       "start_time": "08:00",
       "end_time": "15:00"
+    }
+  },
+  {
+    "portCode": "Walmart - Elizabeth NJ",
+    "day_of_week": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "mandatory_appt": {
+      "start_time": "06:00",
+      "end_time": "18:00"
+    }
+  },
+  {
+    "portCode": "Costco DC - Ontario",
+    "day_of_week": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "mandatory_appt": {
+      "start_time": "06:00",
+      "end_time": "18:00"
+    }
+  },
+  {
+    "portCode": "Warehouse - Carson",
+    "day_of_week": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "mandatory_appt": {
+      "start_time": "06:00",
+      "end_time": "18:00"
+    }
+  },
+  {
+    "portCode": "Cara-Van Yard",
+    "day_of_week": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "mandatory_appt": {
+      "start_time": "06:00",
+      "end_time": "18:00"
+    }
+  },
+  {
+    "portCode": "NJ Direct Customer",
+    "day_of_week": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "mandatory_appt": {
+      "start_time": "06:00",
+      "end_time": "18:00"
+    }
+  },
+  {
+    "portCode": "East Penn MFG CO IN - Alburtis PA",
+    "day_of_week": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "mandatory_appt": {
+      "start_time": "06:00",
+      "end_time": "18:00"
+    }
+  },
+  {
+    "portCode": "MOBI TECHNOLOGIES - Chicago",
+    "day_of_week": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "mandatory_appt": {
+      "start_time": "06:00",
+      "end_time": "18:00"
+    }
+  },
+  {
+    "portCode": "IKEA - Carson (LAX)",
+    "day_of_week": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "mandatory_appt": {
+      "start_time": "06:00",
+      "end_time": "18:00"
+    }
+  },
+  {
+    "portCode": "WSI - Menasha Warehouse",
+    "day_of_week": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "mandatory_appt": {
+      "start_time": "06:00",
+      "end_time": "18:00"
     }
   }
 ]

@@ -83,7 +83,9 @@ def _prepare_optimizer_load(
         "driver_pay": 0,
         "revenue": 0,
         "expense": 0,
-        "is_manual": True
+        "is_manual": True,
+        "chassis_pick_event": payload.get('chassis_pick_event', None),
+        "chassis_termination_event": payload.get('chassis_termination_event', None)
     }
 
 async def _insert_optimizer_load(conn, optimizer_load: Dict[str, Any]) -> None:
@@ -243,6 +245,95 @@ async def add_move_to_optimizer_plan(carrier: str, payload: Dict[str, Any]) -> D
     except Exception as e:
         logger.error(f"Failed to add move to plan: {str(e)}")
         raise Exception(f"Failed to add move to plan: {str(e)}")
+
+
+async def reassign_move_to_optimizer_plan(
+    carrier: str,
+    body: Dict[str, Any]
+) -> Dict[str, str]:
+    """
+    Re-assigns a load to a new driver in the optimizer plan.
+
+    Args:
+        carrier: The carrier ID/name
+        body: Dictionary containing:
+            - reference_number (str): Load reference number
+            - plan_id (str): Plan ID
+            - move_id (str): Move ID (for container moves)
+            - optimizer_load_id (str): Optimizer load ID
+            - prev_driver_id (str): Previous driver ID
+            - driver (str): New driver ID
+            - load_assigned_date (str): New assigned date
+            - is_free_flow_move (bool): If the move is free flow
+
+    Returns:
+        Dict containing status and message
+
+    Raises:
+        ValueError: If validation fails
+        Exception: For any other errors
+    """
+    try:
+
+        # get payload from body
+        payload = {
+            "reference_number": body.get("reference_number"),
+            "plan_id": body.get("plan_id"),
+            "optimizer_load_id": body.get("optimizer_load_id"),
+            "move_id": body.get("move_id"),
+            "is_free_flow_move": body.get("is_free_flow_move", False),
+            "prev_driver_id": body.get("prev_driver_id"),
+            "driver": body.get("driver"),
+            "load_assigned_date": body.get("load_assigned_date")
+        }
+
+        postgres = PostgresConnection()
+        pool = await postgres.get_pool()
+
+        prev_load_data = None
+
+        # remove from previous driver if needed
+        if payload.get('prev_driver_id') and payload.get('driver'):
+            async with pool.acquire() as conn:
+                prev_load_data = await conn.fetchrow(
+                    """
+                    SELECT * FROM optimizer_loads
+                    WHERE reference_number = $1
+                    AND plan_id = $2
+                    """,
+                    payload['reference_number'],
+                    payload['plan_id']
+                )
+                
+                for event_type in ['chassis_pick_event', 'chassis_termination_event']:
+                    if prev_load_data[event_type]:
+                        event_data = json.loads(prev_load_data[event_type])
+                        for field in ['enroute', 'arrived', 'departed']:
+                            event_data.pop(field, None)
+                        payload[event_type] = json.dumps(event_data)
+
+            await remove_move_from_optimizer_plan(carrier, {
+                "reference_number": payload['reference_number'],
+                "plan_id": payload['plan_id'],
+                "move_id": payload.get('move_id'),
+                "optimizer_load_id": payload.get('optimizer_load_id'),
+                "is_free_flow_move": payload.get('is_free_flow_move', False)
+            })
+
+        # Add to new driver
+        add_payload = dict(payload)
+        add_payload.pop('prev_driver_id', None)
+        result = await add_move_to_optimizer_plan(carrier, add_payload)
+        return {
+            "status": "success",
+            "message": "Load successfully reassigned to new driver"
+        }
+    except ValueError as e:
+        logger.error(f"Validation error in reassign_load_driver: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Failed to reassign load driver: {str(e)}")
+        raise Exception(f"Failed to reassign load driver: {str(e)}")
 
 
 async def remove_move_from_optimizer_plan(

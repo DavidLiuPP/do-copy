@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from app.modules.scheduler.move_scheduler import predict_next_move
 from app.modules.optimizer.driver_plan import get_optmized_driver_plan, get_optimizer_review_recommendation, get_in_day_actions
-from app.modules.optimizer.driver_plan_edit import add_move_to_optimizer_plan, remove_move_from_optimizer_plan
+from app.modules.optimizer.driver_plan_edit import add_move_to_optimizer_plan, remove_move_from_optimizer_plan, reassign_move_to_optimizer_plan
 from app.modules.optimizer.eta_service import store_driver_eta_details, get_eta_details
 from fastapi import BackgroundTasks
 
@@ -214,6 +214,29 @@ async def remove_move_from_plan(request: Request, reference_number: str, plan_id
             payload['is_free_flow_move'] = is_free_flow_move
 
         result = await remove_move_from_optimizer_plan(carrier, payload)
+
+        response = { "result": result, "status": "success" }
+        return JSONResponse(content=response, status_code=200)
+
+    except Exception as e:
+        logger.error(e)
+        return JSONResponse(content={"message": str(e), "status": "error"}, status_code=500)
+
+@router.post("/reassign_move_to_optimizer_plan")
+async def reassign_move_to_plan(request: Request):
+    try:
+        user_payload = request.state.user
+        carrier = user_payload.get('carrier')
+
+        if not carrier:
+            return JSONResponse(
+                content={"message": "Carrier ID not found in token"},
+                status_code=400
+            )
+        
+        body = await request.json()
+
+        result = await reassign_move_to_optimizer_plan(carrier, body)
 
         response = { "result": result, "status": "success" }
         return JSONResponse(content=response, status_code=200)
