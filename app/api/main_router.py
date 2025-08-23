@@ -9,7 +9,6 @@ from app.modules.optimizer.driver_plan_edit import add_move_to_optimizer_plan, r
 from app.modules.optimizer.eta_service import store_driver_eta_details, get_eta_details
 from fastapi import BackgroundTasks
 
-
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -90,6 +89,7 @@ async def generate_driver_plan(request: Request, background_tasks: BackgroundTas
         add_to_existing_plan = body.get('add_to_existing_plan', False)
         plan_branch = body.get('plan_branch', [])
         shift = body.get('shift', None)
+        allow_late_arrivals = body.get('allow_late_arrivals', False)
 
         is_approved_move_ids_provided = 'approved_modified_move_ids' in body
         approved_modified_move_ids = body.get('approved_modified_move_ids', [])
@@ -105,6 +105,7 @@ async def generate_driver_plan(request: Request, background_tasks: BackgroundTas
             plan_branch=plan_branch,
             shift=shift,
             background_tasks=background_tasks,
+            allow_late_arrivals=allow_late_arrivals
         )
 
         response = { "result": result, "status": "success" }
@@ -340,3 +341,4 @@ async def get_eta(request: Request):
     except Exception as e:
         logger.error(e)
         return JSONResponse(content={"message": str(e), "status": "error"}, status_code=500)
+

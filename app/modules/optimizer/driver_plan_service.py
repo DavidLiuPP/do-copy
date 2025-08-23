@@ -2,11 +2,13 @@ import logging
 import json
 from datetime import datetime
 from decimal import Decimal
-from copy import deepcopy
+import uuid
+from typing import Dict, Any
+
+from app.modules.upload_model.upload_file import upload_file_in_s3_with_boto3
 from app.postgres_connection import PostgresConnection
 from app.postgres_services.store_driver_plan import save_summary_of_optimal_plan, save_optimizer_loads
 from app.modules.optimizer.sanity_check import run_sanity_check_automation
-import asyncio
 from fastapi import BackgroundTasks
 
 
@@ -137,3 +139,38 @@ async def save_plan_details(
         logger.error(f"Failed to start sanity check background task: {str(e)}")
     
     return plan_id
+
+
+async def upload_plan_json_to_s3(json_data: Dict[str, Any], carrier: str, plan_id: str) -> str:
+    """
+    Upload provided plan JSON data to S3 as "optimizer-plans/{carrier}_{plan_id}.json".
+    """
+    try:
+        json_data = convert_uuid(json_data)
+
+        plan_id = str(plan_id)
+        def sanitize(value: str) -> str:
+            safe = ''.join(ch if ch.isalnum() or ch in ('-', '_') else '_' for ch in (value or ''))
+            return safe.strip('_') or 'unknown'
+
+        file_stem = f"{sanitize(str(carrier))}_{sanitize(str(plan_id))}"
+        if not file_stem.endswith('.json'):
+            file_stem += '.json'
+        s3_key = f"optimizer-plans/{file_stem}"
+
+        return await upload_file_in_s3_with_boto3(s3_key, json_data)
+    except Exception as e:
+        logger.error(f"Failed to upload plan JSON to S3: {str(e)}")
+        return ""
+
+def convert_uuid(obj):
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: convert_uuid(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_uuid(item) for item in obj]
+    return obj
+

@@ -5,12 +5,11 @@ from typing import Dict, Any
 from datetime import datetime, timedelta
 from fastapi import BackgroundTasks
 
-from app.modules.optimizer.driver_plan_service import save_plan_details
+from app.modules.optimizer.driver_plan_service import save_plan_details, upload_plan_json_to_s3
 from app.modules.optimizer.hos_service import get_hos_data_for_drivers
 from app.modules.scheduler.utility import map_loads_for_scheduler
 from app.modules.scheduler.move_scheduler import retrieve_scheduled_moves_for_optimizer
 from app.modules.optimizer.map_loads_optimizer_service import map_loads_for_optimizer
-from app.postgres_services.store_driver_plan import save_optimizer_inputs_loads
 from app.services.common_service import get_time_zone, get_carrier_preferences
 from app.services.mapping_service import add_recommended_returns
 from app.services.redis_service import get_default_yard_location
@@ -123,7 +122,8 @@ async def get_optmized_driver_plan(
     approved_modified_move_ids: list = [],
     plan_branch: list = [],
     shift: str = None,
-    background_tasks: BackgroundTasks = None
+    background_tasks: BackgroundTasks = None,
+    allow_late_arrivals: bool = False
 ) -> Dict[str, Any]:
     try:
         # Validate inputs
@@ -221,14 +221,19 @@ async def get_optmized_driver_plan(
         
         # get optimal plan
         start_optimal_plan_time = time.time()
-        optimal_plan, skipped_moves, _ = await get_optimal_plan_v3(
+        optimizer_output = await get_optimal_plan_v3(
             user_payload,
             actionable_moves,
             drivers,
             converted_plan_date,
             branch=plan_branch,
-            shift=shift
+            shift=shift,
+            allow_late_arrivals=allow_late_arrivals
         )
+        optimal_plan = optimizer_output['optimal_plan']
+        skipped_moves = optimizer_output['skipped_moves']
+        optimizer_input = optimizer_output['optimizer_input']
+        
         end_optimal_plan_time = time.time()
         print(f"Time taken to get optimal plan: {end_optimal_plan_time - start_optimal_plan_time} seconds")
         plan_id = ""
@@ -257,7 +262,13 @@ async def get_optmized_driver_plan(
                     background_tasks=background_tasks,
                 )
                 
-                await save_optimizer_inputs_loads(carrier, loads, plan_id, converted_plan_date, shift, plan_branch)
+                # Upload plan input JSON to S3
+                try:
+                    optimizer_input['plan_id'] = str(plan_id)
+                    await upload_plan_json_to_s3(optimizer_input, carrier, str(plan_id))
+                except Exception as upload_err:
+                    logger.error(f"Failed to upload plan JSON to S3: {str(upload_err)}")
+
                 end_save_plan_details_time = time.time()
                 print(f"Time taken to save plan details: {end_save_plan_details_time - start_save_plan_details_time} seconds")
         except Exception as e:
@@ -480,4 +491,3 @@ async def get_in_day_actions(
     except Exception as e:
         logger.error(e)
         raise Exception(f"Failed to get optimizer plan recommendation: {str(e)}")
-

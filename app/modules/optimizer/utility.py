@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from app.modules.optimizer.constants import EVENT_TIME_MAP, CARRIER_CONFIGS
 from app.utils.distance_calc import calculate_distance_between_locations
 from app.services.redis_service import get_shift_times
+from app.postgres_services.drayage_intelligence_service import get_drayage_intelligence
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +209,16 @@ def check_move_validity(
         raise
 
 
-def modify_move_for_invalid_move(user_payload: Dict[str, Any], move: List[Dict[str, Any]], type: str, position: str = 'end') -> List[Dict[str, Any]]:
+def modify_move_for_invalid_move(
+    user_payload: Dict[str, Any], 
+    move: List[Dict[str, Any]], 
+    type: str, 
+    position: str = 'end',
+    load: Dict[str, Any] = None
+) -> List[Dict[str, Any]]:
+    """
+    Modified to fetch and use drop yard configuration from database.
+    """
     try:
         carrier_id = user_payload.get('carrier')
         use_nearest_to_delivery_yard = CARRIER_CONFIGS.get(carrier_id, {}).get('use_nearest_to_delivery_yard', False)
@@ -216,6 +226,8 @@ def modify_move_for_invalid_move(user_payload: Dict[str, Any], move: List[Dict[s
         copied_move = deepcopy(move)
         yard_locations = user_payload.get('default_yard_locations')
         distance_unit = user_payload.get('distanceUnit', 'mi')
+
+        drayage_config = user_payload.get('drayage_config', {})
 
         ref_location_to_drop = None
         if use_nearest_to_delivery_yard:
@@ -236,30 +248,51 @@ def modify_move_for_invalid_move(user_payload: Dict[str, Any], move: List[Dict[s
             return move
 
         if position == 'end':
-            # add drop event to the move
+            # Add DROPCONTAINER event
             last_event = copied_move[-1]
 
             if not ref_location_to_drop:
                 ref_location_to_drop = last_event
 
-            nearest_yard_location = get_nearest_yard_location(yard_locations, ref_location_to_drop, distance_unit)
+            # Get appropriate yard based on configuration
+            nearest_yard_location = get_nearest_yard_location(
+                yard_locations, 
+                ref_location_to_drop, 
+                distance_unit,
+                carrier_id=carrier_id,
+                load=load,
+                drayage_config=drayage_config  # Pass config to avoid another DB call
+            )
+            
             if last_event.get('customerId') == nearest_yard_location.get('customerId'):
                 return move
 
             copied_move.append({
                 'type': 'DROPCONTAINER',
-                'distance': calculate_distance_between_locations(last_event['address'], nearest_yard_location['address'], distance_unit),
+                'distance': calculate_distance_between_locations(
+                    last_event['address'], 
+                    nearest_yard_location['address'], 
+                    distance_unit
+                ),
                 'moveId': last_event['moveId'],
                 **nearest_yard_location
             })
         else:
-            # add pickup event to the move
+            # Add HOOKCONTAINER event
             first_event = copied_move[0]
 
             if not ref_location_to_drop:
                 ref_location_to_drop = first_event
 
-            nearest_yard_location = get_nearest_yard_location(yard_locations, ref_location_to_drop, distance_unit)
+            nearest_yard_location = get_nearest_yard_location(
+                yard_locations, 
+                ref_location_to_drop, 
+                distance_unit,
+                carrier_id=carrier_id,
+                load=load,
+                drayage_config=drayage_config
+            )
+            
             if first_event.get('customerId') == nearest_yard_location.get('customerId'):
                 return move
 
@@ -269,7 +302,11 @@ def modify_move_for_invalid_move(user_payload: Dict[str, Any], move: List[Dict[s
                 'moveId': first_event['moveId'],
                 **nearest_yard_location
             })
-            copied_move[1]['distance'] = calculate_distance_between_locations(nearest_yard_location['address'], first_event['address'], distance_unit)
+            copied_move[1]['distance'] = calculate_distance_between_locations(
+                nearest_yard_location['address'], 
+                first_event['address'], 
+                distance_unit
+            )
 
         return copied_move
     except Exception as e:
@@ -380,15 +417,199 @@ def populate_appointment_times_to_events(
         logger.error(f"Error extracting recommended appointment times: {str(e)}")
         raise Exception(f"Failed to extract recommended appointment times: {str(e)}")
 
-def get_nearest_yard_location(yard_locations: List[Dict[str, Any]], location: Dict[str, Any], distance_unit: str = 'mi') -> Dict[str, Any]:
+def get_nearest_yard_location(
+    yard_locations: List[Dict[str, Any]], 
+    location: Dict[str, Any], 
+    distance_unit: str = 'mi',
+    carrier_id: str = None,
+    load: Dict[str, Any] = None,
+    drayage_config: Dict[str, Any] = None  # Pass config to avoid multiple DB calls
+) -> Dict[str, Any]:
+    """
+    Get the appropriate yard for DROPCONTAINER events.
+    Uses database-driven configuration for yard selection logic.
+    """
     try:
+        # If only one yard available, return it
         if len(yard_locations) == 1:
             return yard_locations[0]
-
-        return min(yard_locations, key=lambda x: calculate_distance_between_locations(location['address'], x['address'], distance_unit))
+        
+        # Use passed config or fetch from database
+        if not drayage_config:
+            logger.warning("Drayage config not passed, fetching from database")
+            pass
+        
+        # Check for new drop yard configuration
+        if drayage_config and drayage_config.get('empty_drop_yard_config'):
+            yard_config = drayage_config.get('empty_drop_yard_config')
+            logic_type = yard_config.get('logic_type')
+            
+            if logic_type == 'EAST_WEST_SPLIT':
+                return get_drop_yard_east_west_split(
+                    yard_locations, 
+                    location, 
+                    yard_config, 
+                    load
+                )
+            elif logic_type == 'NEAREST_TO_DELIVERY':
+                # Quality Container logic - find nearest yard
+                return min(yard_locations, key=lambda x: calculate_distance_between_locations(
+                    location['address'], 
+                    x['address'], 
+                    distance_unit
+                ))
+            elif logic_type == 'SINGLE_YARD':
+                # Use configured single yard
+                single_yard_id = yard_config.get('yards', {}).get('default', {}).get('yard_id')
+                if single_yard_id:
+                    matching_yard = next(
+                        (y for y in yard_locations if y.get('customerId') == single_yard_id),
+                        None
+                    )
+                    if matching_yard:
+                        return matching_yard
+        
+        # Fallback to default behavior based on carrier
+        if carrier_id == '641a10875b159a160742327e':  # RoadEx
+            # Hardcoded fallback for RoadEx if config is missing
+            return get_roadex_yard_fallback(yard_locations, location, load)
+        
+        # Default: nearest yard
+        return min(yard_locations, key=lambda x: calculate_distance_between_locations(
+            location['address'], 
+            x['address'], 
+            distance_unit
+        ))
+    
     except Exception as e:
-        logger.error(f"Error getting nearest yard location: {str(e)}")
-        raise
+        logger.error(f"Error in get_nearest_yard_location: {str(e)}")
+        # Safe fallback to first available yard
+        return yard_locations[0] if yard_locations else None
+
+
+def get_drop_yard_east_west_split(
+    yard_locations: List[Dict[str, Any]],
+    delivery_location: Dict[str, Any],
+    yard_config: Dict[str, Any],
+    load: Dict[str, Any] = None
+) -> Dict[str, Any]:
+    """
+    Implements east/west split logic for DROPCONTAINER yard selection.
+    Used by RoadEx for their specific business rules.
+    """
+    try:
+        dividing_longitude = yard_config.get('dividing_longitude', -117.624773)
+        yards_config = yard_config.get('yards', {})
+        
+        # Get configured yard IDs
+        east_yard_id = yards_config.get('east', {}).get('yard_id')
+        west_default_yard_id = yards_config.get('west_default', {}).get('yard_id')
+        west_amazon_config = yards_config.get('west_amazon', {})
+        west_amazon_yard_id = west_amazon_config.get('yard_id')
+        
+        # Find yards in available locations
+        east_yard = next(
+            (y for y in yard_locations if y.get('customerId') == east_yard_id),
+            None
+        )
+        west_default_yard = next(
+            (y for y in yard_locations if y.get('customerId') == west_default_yard_id),
+            None
+        )
+        west_amazon_yard = next(
+            (y for y in yard_locations if y.get('customerId') == west_amazon_yard_id),
+            None
+        )
+        
+        # Get delivery longitude
+        delivery_lng = delivery_location.get('address', {}).get('lng')
+        
+        if not delivery_lng:
+            logger.warning("No longitude for delivery location, using west default yard")
+            return west_default_yard if west_default_yard else yard_locations[0]
+        
+        # Apply east/west logic
+        if delivery_lng > dividing_longitude:
+            # East of dividing line - use Ontario yard
+            logger.debug(f"Delivery lng {delivery_lng} > {dividing_longitude}, using east yard")
+            return east_yard if east_yard else yard_locations[0]
+        else:
+            # West of dividing line - check for special conditions
+            if west_amazon_config and load:
+                condition = west_amazon_config.get('condition', {})
+                if check_drop_yard_condition(load, condition):
+                    logger.debug(f"Amazon load detected, using Amazon yard")
+                    return west_amazon_yard if west_amazon_yard else west_default_yard if west_default_yard else yard_locations[0]
+            
+            logger.debug(f"Using west default yard")
+            return west_default_yard if west_default_yard else yard_locations[0]
+    
+    except Exception as e:
+        logger.error(f"Error in get_drop_yard_east_west_split: {str(e)}")
+        return yard_locations[0] if yard_locations else None
+
+
+def check_drop_yard_condition(load: Dict[str, Any], condition: Dict[str, Any]) -> bool:
+    """
+    Check if a load meets the condition for specific drop yard selection.
+    """
+    if not condition:
+        return False
+    
+    field = condition.get('field')
+    operator = condition.get('operator')
+    value = condition.get('value')
+    
+    if not all([field, operator, value]):
+        return False
+    
+    load_value = str(load.get(field, ''))
+    
+    if operator == 'starts_with':
+        return load_value.upper().startswith(str(value).upper())
+    elif operator == 'equals':
+        return load_value.upper() == str(value).upper()
+    elif operator == 'contains':
+        return str(value).upper() in load_value.upper()
+    elif operator == 'ends_with':
+        return load_value.upper().endswith(str(value).upper())
+    
+    return False
+
+
+def get_roadex_yard_fallback(
+    yard_locations: List[Dict[str, Any]],
+    delivery_location: Dict[str, Any],
+    load: Dict[str, Any] = None
+) -> Dict[str, Any]:
+    """
+    Fallback logic for RoadEx if database configuration is missing.
+    This ensures the system continues to work even without DB config.
+    """
+    # Hardcoded yard IDs as fallback
+    ONTARIO_YARD_ID = '67460e1a105855c40130a2dc'
+    Q_STREET_YARD_ID = '641a138d4afd3216030be8ec'
+    AMAZON_YARD_ID = '66d8e4486f8e3a829bd63aa5'
+    ONTARIO_LNG = -117.624773
+    
+    ontario_yard = next((y for y in yard_locations if y.get('customerId') == ONTARIO_YARD_ID), None)
+    q_street_yard = next((y for y in yard_locations if y.get('customerId') == Q_STREET_YARD_ID), None)
+    amazon_yard = next((y for y in yard_locations if y.get('customerId') == AMAZON_YARD_ID), None)
+    
+    delivery_lng = delivery_location.get('address', {}).get('lng')
+    
+    if not delivery_lng:
+        return q_street_yard if q_street_yard else yard_locations[0]
+    
+    if delivery_lng > ONTARIO_LNG:
+        return ontario_yard if ontario_yard else yard_locations[0]
+    
+    # Check if Amazon load
+    if load and str(load.get('consigneeName', '')).upper().startswith('AMZN'):
+        return amazon_yard if amazon_yard else q_street_yard if q_street_yard else yard_locations[0]
+    
+    return q_street_yard if q_street_yard else yard_locations[0]
+
 
 def filter_drivers_by_shift(drivers: List[Dict[str, Any]], shift: str) -> List[Dict[str, Any]]:
     try:

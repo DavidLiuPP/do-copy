@@ -20,6 +20,7 @@ from vrp_optimizer.assumptions import CHASSIS_ACTIVITIES
 
 from app.modules.optimizer.map_loads_optimizer_service import map_actionable_moves
 from load_optimizer.get_optimal_plan_v3 import get_optimal_plan_v3
+
 logger = logging.getLogger(__name__)
 
 async def get_driver_plan(carrier: str, plan_id: str):
@@ -525,7 +526,7 @@ async def get_container_sizes_and_types_labels(carrier: str, moves: List[Dict[st
     return container_sizes_map, container_types_map
 
 
-async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -> Dict[str, str]:
+async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str, custom_assumptions: Dict[str, Any] = None) -> Dict[str, str]:
     """
     Compare the optimiser plan with the original events and return the delta
     Args:
@@ -739,7 +740,33 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
                     continue
 
         # get optimal plan
-        optimal_plan, _, _ = await get_optimal_plan_v3(user_payload, actionable_moves, drivers, converted_plan_date, branch=plan_branch, shift=shift)
+        if custom_assumptions:
+            from vrp_optimizer import assumptions
+            original_get_assumptions = assumptions.get_carrier_vrp_assumptions
+            
+            def patched_get_assumptions(carrier_id=None):
+                base_assumptions = original_get_assumptions(carrier_id)
+                base_assumptions.update(custom_assumptions)
+                return base_assumptions
+            
+            assumptions.get_carrier_vrp_assumptions = patched_get_assumptions
+            
+            try:
+                # Get optimal plan with custom assumptions
+                optimizer_output = await get_optimal_plan_v3(
+                    user_payload,
+                    actionable_moves,
+                    drivers_actual,
+                    converted_plan_date,
+                    branch=plan_branch,
+                    shift=shift
+                )
+            finally:
+                # Restore original function
+                assumptions.get_carrier_vrp_assumptions = original_get_assumptions
+        else:
+            optimizer_output = await get_optimal_plan_v3(user_payload, actionable_moves, drivers, converted_plan_date, branch=plan_branch, shift=shift)
+        optimal_plan = optimizer_output['optimal_plan']
 
         optimal_plan_by_driver = group_and_sort_plan_by_driver(optimal_plan)
 

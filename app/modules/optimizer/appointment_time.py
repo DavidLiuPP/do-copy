@@ -225,7 +225,7 @@ async def get_appointment_time_v3(
             available_drivers, additional_depot_locations = get_available_drivers_from_existing_driver_schedule(driver_schedule, drivers)  
 
         # Get optimal plan
-        optimal_plan, skipped_moves, new_driver_schedule = await get_optimal_plan_v3(
+        optimizer_output = await get_optimal_plan_v3(
             user_payload=user_payload, 
             actionable_moves=actionable_moves, 
             drivers=available_drivers, 
@@ -234,7 +234,10 @@ async def get_appointment_time_v3(
             return_schedule=True,
             time_limit=30 if use_driver_schedule else 300
         )
-
+        
+        optimal_plan = optimizer_output['optimal_plan']
+        skipped_moves = optimizer_output['skipped_moves']
+        new_driver_schedule = optimizer_output['driver_schedule']
         driver_schedule.update(new_driver_schedule)
         
         # Handle unplanned moves
@@ -247,7 +250,7 @@ async def get_appointment_time_v3(
 
         if len(unplanned_moves) > 0:
 
-            optimal_plan_next_iteration, skipped_moves_next_iteration, driver_schedule_next_iteration = await get_optimal_plan_v3(
+            optimizer_output_next_iteration = await get_optimal_plan_v3(
                 user_payload=user_payload, 
                 actionable_moves=unplanned_moves, 
                 drivers=drivers, 
@@ -255,9 +258,12 @@ async def get_appointment_time_v3(
                 return_schedule=True,
                 time_limit=30
             )
+            optimal_plan_next_iteration = optimizer_output_next_iteration['optimal_plan']
+            driver_schedule_next_iteration = optimizer_output_next_iteration['driver_schedule']
+
             if len(optimal_plan_next_iteration) > 0:
                 optimal_plan.extend(optimal_plan_next_iteration)
-                driver_schedule.update(driver_schedule_next_iteration)
+                driver_schedule.update(driver_schedule_next_iteration) 
 
         if len(optimal_plan) == 0:
             return recommended_moves

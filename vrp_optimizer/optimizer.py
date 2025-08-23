@@ -36,7 +36,8 @@ class Optimizer:
         location_distance_matrix = [],
         plan_start_minute = 0,
         plan_end_minute = 1440,
-        carrier_id = None
+        carrier_id = None,
+        allow_late_arrivals_upto_n_minutes = 0
     ):
         """
             Optimizer is a class that optimizes the moves across the drivers efficiently.
@@ -86,6 +87,7 @@ class Optimizer:
         self.ALGORITHM = ALGORITHM
         self.plan_start_minute = plan_start_minute
         self.plan_end_minute = plan_end_minute
+        self.allow_late_arrivals_upto_n_minutes = allow_late_arrivals_upto_n_minutes
 
     def filter_depots(self, depot_locations, drivers):
         """
@@ -397,7 +399,28 @@ class Optimizer:
         for location_idx, node_data in enumerate(self.NODE_DATA):
             index = self.manager.NodeToIndex(location_idx)
             window = node_data['available_range']
-            self.time_dimension.CumulVar(index).SetRange(window[0] + 1, window[1] + 1)
+
+          # Check if you want to allow lateness up to a certain limit
+            if self.allow_late_arrivals_upto_n_minutes > 0:
+                # 1. Set the PENALTY (the "fine") starting at the ideal deadline.
+                #    It's better to use a fixed penalty from your assumptions for easier tuning.
+                penalty_for_late_arrival = round(self.assumptions['SKIP_NODE_PENALTY'] / self.allow_late_arrivals_upto_n_minutes)
+                self.time_dimension.SetCumulVarSoftUpperBound(
+                    index,
+                    window[1] + 1,
+                    penalty_for_late_arrival
+                )
+
+                # 2. Set the HARD LIMIT (the "physical barrier").
+                #    This is the original deadline plus your allowed buffer.
+                max_allowed_time = window[1] + self.allow_late_arrivals_upto_n_minutes
+                self.time_dimension.CumulVar(index).SetMax(max_allowed_time)
+
+                # 3. Ensure the earliest time is still respected.
+                self.time_dimension.CumulVar(index).SetMin(window[0] + 1)
+            else:
+                # Your original hard constraint logic
+                self.time_dimension.CumulVar(index).SetRange(window[0] + 1, window[1] + 1)
 
             # Ensure parent node is visited before child node
             if node_data.get('previous_node') is not None:

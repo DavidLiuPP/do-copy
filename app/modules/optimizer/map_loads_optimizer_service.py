@@ -40,8 +40,18 @@ async def map_actionable_moves(
         all_locations = list(set(event['customerId'] for load in loads for event in load['move'] if event.get('customerId')))
         location_office_hours = await get_office_hours(carrier, all_locations, timeZone)
 
-        drayage_intelligence = await get_drayage_intelligence(carrier, ['is_exclude_from_scheduler', 'exclude_locations_for_scheduler'])
+        drayage_config_for_drops = await get_drayage_intelligence(
+            carrier, 
+            ['empty_drop_yard_config', 'empty_drop_logic_version']
+        )
+        
+        user_payload['drayage_config'] = drayage_config_for_drops
 
+        drayage_intelligence = await get_drayage_intelligence(
+            carrier, 
+            ['is_exclude_from_scheduler', 'exclude_locations_for_scheduler']
+        )
+        
         for load_details in loads:
             load_copy = load_details.copy()
             
@@ -95,7 +105,7 @@ async def map_actionable_moves(
                     })
                     continue
 
-                modified_move = modify_move_for_invalid_move(user_payload, actionable_move, event_type)
+                modified_move = modify_move_for_invalid_move(user_payload, actionable_move, event_type, 'end', load_copy)
                 modified_move = populate_appointment_times_to_events(
                     user_payload, [load_copy], modified_move, converted_plan_date, 
                     time_prediction, location_office_hours

@@ -21,7 +21,7 @@ DISTANCE_MULTIPLIER = 1.5
 
 ONE_DAY_IN_MINUTES = 24 * 60
 
-
+LATE_ARRIVAL_MINUTES = 120
 
 # Chassis yard configurations for different carriers
 CHASSIS_YARD_CONFIGS = {
@@ -44,7 +44,8 @@ CHASSIS_YARD_CONFIGS = {
 CARRIER_CONFIGS = {
     # Tripoint Intermodal Services
     '63039f613d347315e2a02a2d': {
-        'rotation_order': ['owner_score', 'worked_yesterday', 'distance']
+        'rotation_order': ['owner_score', 'worked_yesterday', 'distance'],
+        'allow_mismatched_appointment_times': True,
     },
     # Quality Container
     '653a6813f7eb901615236816': {
@@ -83,3 +84,7 @@ CARRIER_CONFIGS = {
     }
 }
 
+
+PLANNING_ASSUMPTIONS = {
+    'LATE_ARRIVAL_MOVE': 'LATE_ARRIVAL_MOVE'
+}

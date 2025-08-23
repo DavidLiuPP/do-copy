@@ -205,7 +205,8 @@ async def save_optimizer_loads(carrier, converted_plan_date, optimal_plan, plan_
                     'is_free_flow_move': move.get('is_free_flow_move', False),
                     'reason': move.get('reason', ''),
                     'chassis_pick_event': move.get('chassis_pick_event', None),
-                    'chassis_termination_event': move.get('chassis_termination_event', None)
+                    'chassis_termination_event': move.get('chassis_termination_event', None),
+                    'plan_assumptions': move.get('plan_assumptions', None)
                 }
 
                 for value in move_values.values():

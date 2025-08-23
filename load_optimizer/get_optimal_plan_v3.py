@@ -19,7 +19,9 @@ from app.modules.optimizer.utility import get_planning_time_windows
 from app.postgres_services.driver_rotation_service import apply_driver_rotation_sorting
 from app.modules.optimizer.constants import (
     ONE_DAY_IN_MINUTES,
-    CARRIER_CONFIGS
+    CARRIER_CONFIGS,
+    PLANNING_ASSUMPTIONS,
+    LATE_ARRIVAL_MINUTES
 )
 
 logger = logging.getLogger(__name__)
@@ -66,11 +68,17 @@ async def get_optimal_plan_v3(
     return_schedule: bool = False,
     time_limit: int = 3 * 60,
     branch: Any = None,
-    shift: Any = None
+    shift: Any = None,
+    allow_late_arrivals: bool = False
 ):
     try:
         if len(drivers) == 0:
-            return [], [], {}
+            return {
+                'optimal_plan': [],
+                'skipped_moves': [],
+                'driver_schedule': {},
+                'optimizer_input': {}
+            }
 
         carrier = user_payload.get('carrier')
         timeZone = user_payload.get('timeZone')
@@ -172,6 +180,7 @@ async def get_optimal_plan_v3(
         print(f"Skipped moves: {len(skipped_moves)}")
 
         optimal_plan = []
+        optimizer_input = {}
 
         if equipment_validations:
             # get container size and type for every moves
@@ -186,7 +195,9 @@ async def get_optimal_plan_v3(
             total_locations = moves + ALL_DEPOT_LOCATIONS + ALL_YARD_LOCATIONS
             unique_coords = get_unique_coordinates(total_locations)
             location_distance_matrix = await get_location_distance_matrix_bulk(carrier, unique_coords, distance_unit)
-            
+
+            allow_late_arrivals_upto_n_minutes = LATE_ARRIVAL_MINUTES if allow_late_arrivals else 0
+
             # Create a process pool for running the optimization
             with multiprocessing.Pool(1) as pool:
                 # Run the optimization in a separate process with timeout
@@ -209,7 +220,21 @@ async def get_optimal_plan_v3(
 
                     moves_copy = deepcopy(moves)
                     d_schedule = {}
-                    
+                    all_vehicle_data = [vehicle for chunk in vehicle_data_chunks for vehicle in chunk]
+                    optimizer_input = {
+                        "moves": moves_copy,
+                        "drivers": all_vehicle_data,
+                        "depot_locations": ALL_DEPOT_LOCATIONS,
+                        "yard_locations": ALL_YARD_LOCATIONS,
+                        "timezone": timeZone,
+                        "distance_unit": distance_unit,
+                        "time_limit": time_limit,
+                        "equipment_validations": equipment_validations,
+                        "location_distance_matrix": location_distance_matrix,
+                        "plan_start_minute": plan_start_minute,
+                        "plan_end_minute": plan_end_minute,
+                        "carrier_id": user_payload.get('carrier')
+                    }
                     for vehicle_chunk in vehicle_data_chunks:
                         optimizer = Optimizer(
                             moves = moves_copy,
@@ -223,7 +248,8 @@ async def get_optimal_plan_v3(
                             location_distance_matrix = location_distance_matrix,
                             plan_start_minute = plan_start_minute,
                             plan_end_minute = plan_end_minute,
-                            carrier_id = user_payload.get('carrier')
+                            carrier_id = user_payload.get('carrier'),
+                            allow_late_arrivals_upto_n_minutes = allow_late_arrivals_upto_n_minutes
                         )
                         
                         _optimal_plan, _d_schedule = pool.apply_async(optimizer.optimize).get(timeout=time_limit + 30)
@@ -254,11 +280,21 @@ async def get_optimal_plan_v3(
         # Return the current assignements as new plan if no new optimal plan is found
         if not optimal_plan:
             if not all_assigned_moves:
-                return [], skipped_moves, {}
+                return {
+                    'optimal_plan': [],
+                    'skipped_moves': skipped_moves,
+                    'driver_schedule': {},
+                    'optimizer_input': optimizer_input
+                }
 
             current_plan = get_current_plan(all_assigned_moves)
             formatted_current_plan = map_fixed_plan_to_driver_plan(current_plan, drivers, timeZone, converted_plan_date, distance_unit)
-            return formatted_current_plan, skipped_moves, {}
+            return {
+                'optimal_plan': formatted_current_plan,
+                'skipped_moves': skipped_moves,
+                'driver_schedule': {},
+                'optimizer_input': optimizer_input
+            }
 
         for m in actionable_moves:
             m['is_new_move'] = True
@@ -267,7 +303,12 @@ async def get_optimal_plan_v3(
 
         formatted_fixed_plan = map_fixed_plan_to_driver_plan(fixed_plan, drivers, timeZone, converted_plan_date, distance_unit)
 
-        return formatted_fixed_plan + optimal_plan, skipped_moves, driver_schedule
+        return {
+            'optimal_plan': formatted_fixed_plan + optimal_plan,
+            'skipped_moves': skipped_moves,
+            'driver_schedule': driver_schedule,
+            'optimizer_input': optimizer_input
+        }
     except Exception as e:
         logger.error(e)
 
@@ -324,7 +365,7 @@ async def map_actionable_moves_for_optimizer(
                     from_date_day_diff = get_days_difference(plan_date.isoformat(), event.get('appointment_from'), timeZone)
                     to_date_day_diff = get_days_difference(plan_date.isoformat(), event.get('appointment_to'), timeZone)
 
-                    if from_date_day_diff < 0 or to_date_day_diff < 0:
+                    if from_date_day_diff < 0 and to_date_day_diff < 0:
                         # Skip the move if it's appointment was in the past
                         has_invalid_appts = True
                         break
@@ -344,17 +385,25 @@ async def map_actionable_moves_for_optimizer(
 
                     if appointment:
                         # Check if appointment windows are compatible
-                        will_driver_reach_after_appointment = appointment[0] >= (event_appt_to + 15)
+                        will_driver_reach_after_appointment = appointment[0] >= (event_appt_to + 30)
                         
                         # Allow Driver to reach 6 hours before appointment
                         will_driver_reach_before_appointment = event_appt_from >= (appointment[1] + 360)
+                        
                         if will_driver_reach_before_appointment or will_driver_reach_after_appointment:
-                            if allow_mismatched_appointment_times:
-                                if appointment:
-                                    wait_time = event.get('waiting_time', 0)
-                                    appointment[0] += wait_time
-                                    appointment[1] += wait_time
-                                    continue
+                            if allow_mismatched_appointment_times and appointment:
+                                # shift the appointment window by 15 minutes and reduce the appointment window by the least difference between the appointment window
+                                appointment[0] = appointment[0] - 15 if appointment[0] > 0 else 0
+                                appointment[1] = appointment[0] + appointment_diff
+
+                                # add waiting time to the appointment window
+                                wait_time = event.get('waiting_time', 0)
+                                appointment[0] += wait_time
+                                appointment[1] += wait_time
+
+                                # use the assumed appointment window
+                                continue
+                            
                             has_invalid_appts = True
                             break
 
@@ -503,7 +552,19 @@ def map_route_summary_to_driver_plan(loads: List[Dict[str, Any]], optimal_plan: 
                     event['arrived'] = (converted_plan_date + timedelta(minutes=event_data['minutes']['recommended_arrived'])).isoformat()
                     event['departed'] = (converted_plan_date + timedelta(minutes=event_data['minutes']['recommended_departed'])).isoformat()
                     event['distance'] = event_data['distance']
+                    event['late_arrived_minutes'] = 0
+                    # Calculate late_arrived_minutes based on appointment_to vs recommended_arrived
+                    if event_data.get('appointment_to') and event_data['minutes'].get('recommended_arrived'):
+                        appointment_to_minutes = get_minute_from_time(event_data['appointment_to'])
+                        recommended_arrived_minutes = event_data['minutes']['recommended_arrived']
+                        
+                        if recommended_arrived_minutes <= appointment_to_minutes:
+                            event['late_arrived_minutes'] = 0
+                        else:
+                            event['late_arrived_minutes'] = recommended_arrived_minutes - appointment_to_minutes
                 
+                is_late_arrival_move = any(ev.get('late_arrived_minutes', 0) > 0 for ev in move_copy)
+                plan_assumptions = PLANNING_ASSUMPTIONS.get('LATE_ARRIVAL_MOVE') if is_late_arrival_move else None
                 is_new_move = load.get('is_new_move', False)
                 is_move_affected = False
 
@@ -553,7 +614,8 @@ def map_route_summary_to_driver_plan(loads: List[Dict[str, Any]], optimal_plan: 
                     'driver_index': i,
                     'chassis_pick_event': chassis_pick_event,
                     'chassis_termination_event': chassis_termination_event,
-                    'is_free_flow_move': load.get('is_free_flow_move', False)
+                    'is_free_flow_move': load.get('is_free_flow_move', False),
+                    'plan_assumptions': plan_assumptions
                 }
                 recommended_moves.append(mapped_assignment)
 
