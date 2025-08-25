@@ -199,10 +199,10 @@ def is_vehicle_compatible_with_node(vehicle: dict, node: dict) -> bool:
                 continue
 
             if not operator_fn(rule['operator'], left_val, right_val):
-                return False
+                return False, rule['constraint_name']
 
         except Exception as e:
             logger.error(f"Error evaluating constraint '{rule['constraint_name']}': {str(e)}")
-            return True
+            return True, None
 
-    return True
+    return True, None

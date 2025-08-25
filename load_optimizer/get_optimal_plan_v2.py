@@ -690,7 +690,7 @@ async def get_optimal_plan(user_payload, moves, drivers, plan_date):
     except Exception as e:
         raise Exception(f"Failed to get optimal plan: {str(e)}")
 
-def get_unassigned_moves(optimal_plan, all_loads, invalid_moves, skipped_moves, plan_date, timeZone, actionable_moves):
+def get_unassigned_moves(optimal_plan, all_loads, invalid_moves, plan_date, timeZone, actionable_moves):
     try:
         # Added unassigned load's reason
 
@@ -710,9 +710,6 @@ def get_unassigned_moves(optimal_plan, all_loads, invalid_moves, skipped_moves, 
             invalid_move = next((im for im in invalid_moves if im.get('reference_number') == move.get('reference_number')), None)
             if invalid_move:
                 move['reason'] = invalid_move.get('reason', '')
-            skipped_move = next((im for im in skipped_moves if im.get('reference_number') == move.get('reference_number')), None)
-            if skipped_move:
-                move['reason'] = skipped_move.get('reason', '')
 
         assigned_refs = set(assignment['reference_number'] for assignment in optimal_plan)
         all_refs = set(load['reference_number'] for load in all_loads)
@@ -758,9 +755,7 @@ def get_unassigned_moves(optimal_plan, all_loads, invalid_moves, skipped_moves, 
                 'is_assigned_move': False,
                 'is_deleted': True,
                 'is_free_flow_move': move.get('is_free_flow_move', False),
-                'reason': move.get('reason', '')
-                        or move.get('error_reason', '')
-                        or 'SKIPPED_BY_OPTIMIZER'
+                'reason': move.get('reason', 'UNKNOWN_REASON')
             }
             unassigned_loads.append(mapped_move)
 

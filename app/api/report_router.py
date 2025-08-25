@@ -104,16 +104,6 @@ async def compare_plan(request: Request):
                 content={"message": "Plan date is required"},
                 status_code=400
             )
-        
-        custom_assumptions = None
-        if form.get('skip_node_penalty') or form.get('vehicle_use_penalty') or form.get('penalty_for_empty_miles'):
-            custom_assumptions = {}
-            if form.get('skip_node_penalty'):
-                custom_assumptions['SKIP_NODE_PENALTY'] = int(form.get('skip_node_penalty'))
-            if form.get('vehicle_use_penalty'):
-                custom_assumptions['VEHICLE_USE_PENALTY'] = int(form.get('vehicle_use_penalty'))
-            if form.get('penalty_for_empty_miles'):
-                custom_assumptions['PENALTY_FOR_EMPTY_MILES'] = int(form.get('penalty_for_empty_miles'))
 
         result = await compare_optimiser_plan(user_payload, plan_date)
 

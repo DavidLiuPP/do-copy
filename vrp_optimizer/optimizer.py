@@ -37,7 +37,8 @@ class Optimizer:
         plan_start_minute = 0,
         plan_end_minute = 1440,
         carrier_id = None,
-        allow_late_arrivals_upto_n_minutes = 0
+        allow_late_arrivals_upto_n_minutes = 0,
+        plan_date = None
     ):
         """
             Optimizer is a class that optimizes the moves across the drivers efficiently.
@@ -88,6 +89,7 @@ class Optimizer:
         self.plan_start_minute = plan_start_minute
         self.plan_end_minute = plan_end_minute
         self.allow_late_arrivals_upto_n_minutes = allow_late_arrivals_upto_n_minutes
+        self.plan_date = plan_date
 
     def filter_depots(self, depot_locations, drivers):
         """
@@ -192,14 +194,14 @@ class Optimizer:
                     # Make all the container moves (not the depots) unaccessible from the free flow trip.
                     minutes = self.assumptions.get('MAX_MINUTES')
                 else:
-                                    minutes = int(
-                    minute_to_cover_distance +
-                    (self.assumptions.get('TIME_TO_SWITCH_CHASSIS') if is_chassis_activity_needed else 0) +
-                    dest_minutes +
-                    dest_waiting +
-                    dest_early_arrival_waiting +
-                    self.assumptions.get('BUFFER_TIME_FOR_NEXT_NODE')
-                )
+                    minutes = int(
+                        minute_to_cover_distance +
+                        (self.assumptions.get('TIME_TO_SWITCH_CHASSIS') if is_chassis_activity_needed else 0) +
+                        dest_minutes +
+                        dest_waiting +
+                        dest_early_arrival_waiting +
+                        (self.assumptions.get('BUFFER_TIME_FOR_NEXT_NODE') if minute_to_cover_distance > 0 else 0)
+                    )
 
                 minute_matrix[i1][i2] = minutes
 
@@ -344,7 +346,8 @@ class Optimizer:
                         self.routing.solver().Add(self.routing.VehicleVar(index) != vehicle_id)
                     continue
 
-                if not is_vehicle_compatible_with_node(vehicle, node_specification):
+                is_compatible, _ = is_vehicle_compatible_with_node(vehicle, node_specification)
+                if not is_compatible:
                     self.routing.solver().Add(self.routing.VehicleVar(index) != vehicle_id)
 
         for vehicle_id, vehicle in enumerate(self.VEHICLES):
@@ -400,7 +403,7 @@ class Optimizer:
             index = self.manager.NodeToIndex(location_idx)
             window = node_data['available_range']
 
-          # Check if you want to allow lateness up to a certain limit
+            # Check if you want to allow lateness up to a certain limit
             if self.allow_late_arrivals_upto_n_minutes > 0:
                 # 1. Set the PENALTY (the "fine") starting at the ideal deadline.
                 #    It's better to use a fixed penalty from your assumptions for easier tuning.
@@ -433,13 +436,18 @@ class Optimizer:
                 
                 self.routing.solver().Add(previous_node_time <= node_time)
 
+                # ADD THIS to ensure the previous move must also be performed.
+                self.routing.solver().Add(
+                    self.routing.ActiveVar(node_index) <= self.routing.ActiveVar(previous_node_index)
+                )
+
         # Set vehicle working hours, max working minutes, and max weight constraints
         for vehicle_id, vehicle in enumerate(self.VEHICLES):
             start_index = self.routing.Start(vehicle_id)
             end_index = self.routing.End(vehicle_id)
 
             vehicle_start_minute = vehicle.get('start_minute') + 1
-            vehicle_end_minute =vehicle.get('end_minute') + 1
+            vehicle_end_minute = vehicle.get('end_minute') + 1
 
             self.time_dimension.CumulVar(start_index).SetRange(vehicle_start_minute, vehicle_end_minute)
             self.time_dimension.CumulVar(end_index).SetRange(vehicle_start_minute, vehicle_end_minute)
@@ -521,7 +529,7 @@ class Optimizer:
                     node_spec = self.NODE_DATA[to_node]
                     moves = node_spec.get('move')
                     if any([event for event in moves if event['distance'] > 100]):
-                        penalty = 1000  # Soft penalty
+                        penalty = self.assumptions.get('PENALTY_FOR_COMPANY_DRIVER_LONG_DISTANCE_MOVE')  # Soft penalty
 
                 return cost + penalty
             return distance_callback
@@ -733,7 +741,8 @@ class Optimizer:
             timezone=self.timezone,
             proximity_to_node=empty_miles,
             distance_unit=self.distance_unit,
-            time_to_switch_chassis=self.assumptions.get('TIME_TO_SWITCH_CHASSIS')
+            time_to_switch_chassis=self.assumptions.get('TIME_TO_SWITCH_CHASSIS'),
+            plan_date=self.plan_date
         )
 
         _node_data = {

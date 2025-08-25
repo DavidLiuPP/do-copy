@@ -309,6 +309,7 @@ async def map_loads_for_optimizer(
     try:
         loads_with_actionable_moves = []
         loads_with_combined_trips = []
+        invalid_moves = []
 
         replace_free_flow_trips = options.get('replace_free_flow_trips', False)
 
@@ -336,6 +337,7 @@ async def map_loads_for_optimizer(
         for load in loads:
             # find scheduled plan for the load using reference number, should be an array of all that matches
             scheduled_plan = [plan for plan in scheduled_plans if plan['reference_number'] == load['reference_number']]
+            is_move_included = False
 
             # find actionable move from the load
             driver_order = load.get('driverOrder', None)
@@ -343,12 +345,14 @@ async def map_loads_for_optimizer(
             if not len(moves):
                 continue
 
-            profile_types = list(set(plan['profile_type'] for plan in scheduled_plan if 'profile_type' in plan))
-
             for move_index, actionable_move in enumerate(moves):
                 # skip if the move is not in the scheduled plan or not manually planned
                 is_manually_planned = any(event.get('is_manually_planned') for event in actionable_move)
                 is_active_move = any(event.get('arrived') and not event.get('isVoidOut') for event in actionable_move)
+
+                event_types = [event.get('type') for event in actionable_move]
+                scheduled_events_in_move = [plan for plan in scheduled_plan if plan.get('profile_type', '') in event_types]
+                has_scheduled_appointment = any(plan['scheduled_appointment_from'] for plan in scheduled_events_in_move)
 
                 if is_manually_planned:
                     load_assigned_date = datetime.fromisoformat(actionable_move[0].get('loadAssignedDate'))
@@ -360,10 +364,10 @@ async def map_loads_for_optimizer(
                     )
                     driver_working_date = active_event_departed if active_event_departed else load_assigned_date
 
-                    if not (plan_range.get('shift_from_time') <= driver_working_date <= plan_range.get('shift_to_time')):
+                    if not (plan_range.get('shift_from_time') <= driver_working_date <= plan_range.get('shift_to_time')) and not has_scheduled_appointment:
                         continue
 
-                elif not any(event.get('type') in profile_types for event in actionable_move):
+                elif not scheduled_events_in_move:
                     continue
 
                 # check if the move is already in progress on previous days
@@ -390,14 +394,13 @@ async def map_loads_for_optimizer(
                     
                     # If it is going to be dropped at same location as deliver then it might not be empty
                     if was_dropped_at_warehouse and not is_assigned:
-                        load['error_reason'] = 'PREVIOUS_MOVE_WILL_BE_DROPPED_AT_WAREHOUSE'
+                        load['error_reason'] = 'MOVE_IS_NOT_READY_TO_START'
                         continue
 
                 assigned_driver = actionable_move[0].get('driver')
-                if plan_drivers and assigned_driver:
-                    if assigned_driver not in plan_drivers:
-                        load['error_reason'] = 'INVALID_DRIVER'
-                        continue
+                if plan_drivers and assigned_driver and assigned_driver not in plan_drivers:
+                    load['error_reason'] = 'INVALID_DRIVER'
+                    continue
 
                 
                 load_copy = load.copy()
@@ -419,10 +422,8 @@ async def map_loads_for_optimizer(
                     load_copy['is_manually_planned'] = True
                     load_copy['assigned_driver'] = actionable_move[0].get('driver')
 
-                if is_manually_planned and is_active_move:
-                    load_copy['is_manually_planned'] = True
-                    load_copy['assigned_driver'] = actionable_move[0].get('driver')
-                    load_copy['is_active_move'] = True
+                    if is_active_move:
+                        load_copy['is_active_move'] = True
 
                 use_prepull_driver_for_deliver_move = CARRIER_CONFIGS.get(user_payload.get('carrier'), {}).get('use_prepull_driver_for_deliver_move', None)
 
@@ -435,6 +436,7 @@ async def map_loads_for_optimizer(
                 if is_combined_trip:
                     load_copy['is_combined_trip'] = True
                     load_copy['combineTripId'] = actionable_move[0].get('combineTripId')
+                    is_move_included = True
                     loads_with_combined_trips.append(load_copy)
                     continue
 
@@ -448,22 +450,31 @@ async def map_loads_for_optimizer(
                             new_free_flow_trip = next((trip for trip in order_related_trips if not trip.get('loadDetails')), None)
                             if new_free_flow_trip:
                                 new_free_flow_trip['loadDetails'] = load_copy
+                                is_move_included = True
                                 free_flow_trips.append(new_free_flow_trip)
                         
                         # Never send the non active container moves
                         continue
 
-
+                is_move_included = True
                 loads_with_actionable_moves.append(load_copy)
                 break;
-        
-        mapped_actionable_moves, invalid_moves = await map_actionable_moves(
+
+            if not is_move_included:
+                invalid_moves.append({
+                    'reference_number': load.get('reference_number', ''),
+                    'reason': load.get('error_reason', 'MOVE_IS_PLANNED_FOR_OTHER_DAY_OR_SHIFT')
+                })
+
+        mapped_actionable_moves, _invalid_moves = await map_actionable_moves(
             user_payload=user_payload,
             loads=loads_with_actionable_moves,
             converted_plan_date=converted_plan_date,
             plan_range=plan_range,
             options=options
         )
+
+        invalid_moves.extend(_invalid_moves)
 
         # check if any of the moves are part of combined move
         if len(loads_with_combined_trips) > 0:

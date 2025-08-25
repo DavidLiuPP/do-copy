@@ -348,6 +348,8 @@ async def map_loads_for_reporting(
 
                 load_copy['is_completed_move'] = True
                 load_copy['is_manually_planned'] = False
+                load_copy['is_assigned_move'] = True
+                load_copy['assigned_driver'] = actionable_move[0].get('driver')
                 load_copy['move'] = actionable_move
                 load_copy['move_index'] = move_index
                 loads_with_actionable_moves.append(load_copy)
@@ -526,7 +528,49 @@ async def get_container_sizes_and_types_labels(carrier: str, moves: List[Dict[st
     return container_sizes_map, container_types_map
 
 
-async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str, custom_assumptions: Dict[str, Any] = None) -> Dict[str, str]:
+def find_unplanned_moves(actionable_moves: list, optimal_plan: list) -> list:
+    """
+    Compares the list of actionable moves against the final optimal plan to find
+    which moves were not scheduled.
+    Args:
+        actionable_moves (list): The original list of all moves that were sent
+                                 to the optimizer. Each item is a dictionary
+                                 with a 'reference_number' and '_id' (load_id).
+        optimal_plan (list): The list of moves that were successfully scheduled
+                             by the optimizer. Each item is a dictionary with a
+                             'move' array containing moveId.
+    Returns:
+        list: A list of move dictionaries from actionable_moves that were not
+              included in the optimal_plan.
+    """
+    # Build a set of all moveIds from the optimal plan
+    planned_move_ids = set()
+    for driver_assignment in optimal_plan:
+        moves = driver_assignment.get('move', [])
+        if moves and isinstance(moves, list):
+            for move in moves:
+                move_id = move.get('moveId')
+                if move_id:
+                    planned_move_ids.add(move_id)
+
+    # Find all actionable moves whose moveId is not in the set of planned moveIds
+    unplanned_moves = []
+    for load in actionable_moves:
+        # Get the unique identifier for this load (should match moveId in optimal plan)
+        # For actionable moves, get moveId from the move array
+        moves = load.get('move', [])
+        if moves and isinstance(moves, list) and len(moves) > 0:
+            move_id = moves[0].get('moveId')
+            if move_id and move_id not in planned_move_ids:
+                unplanned_moves.append(load)
+        else:
+            # If no move array or empty, treat as unplanned
+            unplanned_moves.append(load)
+
+    return unplanned_moves
+
+
+async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -> Dict[str, str]:
     """
     Compare the optimiser plan with the original events and return the delta
     Args:
@@ -617,7 +661,7 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str, c
                 'RETURNCONTAINER': ('returnFromTime', 'returnToTime')
             }
             
-            is_amazon_load = load.get('consigneeName', '').startswith('AMZ')
+            is_amazon_load = load.get('consigneeName', '').startswith('AMZ') if load.get('consigneeName', '') else False
 
             # Update appointment windows based on actual times
             for event_type, (from_field, to_field) in time_fields.items():
@@ -698,6 +742,8 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str, c
         # Process actual and optimal plans
         actual_plan_by_driver = group_and_sort_plan_by_driver(actual_plan)
 
+
+
         # filter actual plan by drivers to include only drivers that have road moves
         actual_plan_by_driver = {driver: plan for driver, plan in actual_plan_by_driver.items() if not any(each_plan.get('type_of_load') == 'ROAD' for each_plan in plan)}
 
@@ -705,6 +751,11 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str, c
         all_reference_numbers = [plan.get('reference_number') for driver, plans in actual_plan_by_driver.items() for plan in plans]
         actual_plan = [plan for plan in actual_plan if plan.get('reference_number') in all_reference_numbers]
         actionable_moves = [move for move in actionable_moves if move.get('reference_number') in all_reference_numbers]
+
+        # Only keep actionable_moves where the driver performed moves (driver _id in actual_plan_by_driver)
+        actual_driver_ids = set(actual_plan_by_driver.keys())
+        actionable_moves = [move for move in actionable_moves if move['move'] and move['move'][0].get('driver') in actual_driver_ids]
+        drivers = [driver for driver in drivers if driver.get('_id') in actual_driver_ids]
 
         actual_plan_detailed_entries = create_plan_detailed_entries_compare(
             carrier=carrier,
@@ -738,35 +789,55 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str, c
                 except Exception as e:
                     logger.error(e)
                     continue
+        
+            move['waiting_time'] = sum(event['waiting_time'] for event in move['move'])
 
+        # add travel_time to each event as difference between current arrived and previous event's departed (index-based)
+        for move in actionable_moves:
+            events = move['move']
+            for idx, event in enumerate(events):
+                try:
+                    if idx == 0:
+                        event['travel_time'] = 0
+                        continue
+
+                    # current event entry
+                    curr_entry = next(
+                        (entry for entry in actual_plan_detailed_entries
+                         if entry['reference_number'] == move['reference_number']
+                         and entry['_id'] == event['_id']),
+                        None
+                    )
+
+                    # previous event entry (by index)
+                    prev_event = events[idx - 1]
+                    prev_entry = next(
+                        (entry for entry in actual_plan_detailed_entries
+                         if entry['reference_number'] == move['reference_number']
+                         and entry['_id'] == prev_event['_id']),
+                        None
+                    )
+
+                    if curr_entry and prev_entry and curr_entry.get('arrived') and prev_entry.get('departed'):
+                        arrived_dt = datetime.strptime(curr_entry['arrived'], '%Y-%m-%d %I:%M %p')
+                        prev_departed_dt = datetime.strptime(prev_entry['departed'], '%Y-%m-%d %I:%M %p')
+                        travel_time = int((arrived_dt - prev_departed_dt).total_seconds() / 60)
+                        event['travel_time'] = travel_time if travel_time >= 0 else 0
+                    else:
+                        event['travel_time'] = 0
+
+                except Exception as e:
+                    logger.error(e)
+                    event['travel_time'] = 0
+            
+        for move in actionable_moves:
+            total_travel_time = sum(event.get('travel_time', 0) for event in move['move'])
+            move['total_travel_time'] = total_travel_time
         # get optimal plan
-        if custom_assumptions:
-            from vrp_optimizer import assumptions
-            original_get_assumptions = assumptions.get_carrier_vrp_assumptions
-            
-            def patched_get_assumptions(carrier_id=None):
-                base_assumptions = original_get_assumptions(carrier_id)
-                base_assumptions.update(custom_assumptions)
-                return base_assumptions
-            
-            assumptions.get_carrier_vrp_assumptions = patched_get_assumptions
-            
-            try:
-                # Get optimal plan with custom assumptions
-                optimizer_output = await get_optimal_plan_v3(
-                    user_payload,
-                    actionable_moves,
-                    drivers_actual,
-                    converted_plan_date,
-                    branch=plan_branch,
-                    shift=shift
-                )
-            finally:
-                # Restore original function
-                assumptions.get_carrier_vrp_assumptions = original_get_assumptions
-        else:
-            optimizer_output = await get_optimal_plan_v3(user_payload, actionable_moves, drivers, converted_plan_date, branch=plan_branch, shift=shift)
+        optimizer_output = await get_optimal_plan_v3(user_payload, actionable_moves, drivers, converted_plan_date, branch=plan_branch, shift=shift, allow_late_arrivals=True)
         optimal_plan = optimizer_output['optimal_plan']
+
+        get_unplanned_moves = find_unplanned_moves(actionable_moves, optimal_plan)
 
         optimal_plan_by_driver = group_and_sort_plan_by_driver(optimal_plan)
 
@@ -782,7 +853,7 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str, c
             equipment_validations=equipment_validations
         )
 
-        actual_total_moves = len(actual_plan)
+        actual_total_moves = len(actionable_moves)
         optimal_total_moves = len(optimal_plan)
 
         actual_total_drivers = len(actual_plan_by_driver)
@@ -822,7 +893,8 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str, c
             },
             "comparison_data": {
                 "actual_plan_detailed_entries": actual_plan_detailed_entries,
-                "optimal_plan_detailed_entries": optimal_plan_detailed_entries
+                "optimal_plan_detailed_entries": optimal_plan_detailed_entries,
+                "unplanned_moves": json.loads(json.dumps(get_unplanned_moves, default=str))
             }
         }
 

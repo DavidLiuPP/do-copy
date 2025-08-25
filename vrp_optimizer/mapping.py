@@ -1,9 +1,10 @@
 from copy import deepcopy
 
-from vrp_optimizer.helpers import minute_from_distance, show_time_from_minute_of_day, get_minute
+from vrp_optimizer.helpers import minute_from_distance, show_time_from_minute_of_day, get_minute, get_days_difference
+from app.modules.optimizer.constants import ONE_DAY_IN_MINUTES
 # TIME_TO_SWITCH_CHASSIS is passed as parameter from assumptions
 
-def get_event_times(node_data, _move, prev_completed_minute, endTime, timezone, proximity_to_node, distance_unit, time_to_switch_chassis):
+def get_event_times(node_data, _move, prev_completed_minute, endTime, timezone, proximity_to_node, distance_unit, time_to_switch_chassis, plan_date):
 
     current_time = endTime
 
@@ -42,10 +43,13 @@ def get_event_times(node_data, _move, prev_completed_minute, endTime, timezone, 
 
         current_time = enroute - event.get('early_arrival_waiting', 0)
 
-        if event.get('appointment_from'):
-            obj["appointment_from"] = show_time_from_minute_of_day(get_minute(event.get('appointment_from'), timezone))
-            obj["appointment_to"] = show_time_from_minute_of_day(get_minute(event.get('appointment_to'), timezone))
+        # Calculate appointment window accounting for queue waiting time
+        from_date_day_diff = get_days_difference(plan_date.isoformat(), event.get('appointment_from'), timezone)
+        to_date_day_diff = get_days_difference(plan_date.isoformat(), event.get('appointment_to'), timezone)
 
+        if event.get('appointment_from'):
+            obj["appointment_from"] = max(get_minute(event.get('appointment_from'), timezone) + (from_date_day_diff * ONE_DAY_IN_MINUTES), 0)
+            obj["appointment_to"] = max(get_minute(event.get('appointment_to'), timezone) + (to_date_day_diff * ONE_DAY_IN_MINUTES), 0)
         events.append(obj)
 
 

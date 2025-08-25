@@ -45,6 +45,9 @@ def get_minute_according_to_start_time(time, start_time, timeZone):
 
 @lru_cache(maxsize=1024)
 def minute_from_distance(distance, unit = 'mi'):
+    if distance == 0:
+        return 0
+    
     speed = (
         20 if distance <= 10 else
         40 if distance <= 50 else

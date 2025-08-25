@@ -228,10 +228,11 @@ async def get_optmized_driver_plan(
             converted_plan_date,
             branch=plan_branch,
             shift=shift,
-            allow_late_arrivals=allow_late_arrivals
+            allow_late_arrivals=allow_late_arrivals,
+            invalid_moves=invalid_moves
         )
         optimal_plan = optimizer_output['optimal_plan']
-        skipped_moves = optimizer_output['skipped_moves']
+        invalid_moves = optimizer_output['invalid_moves']
         optimizer_input = optimizer_output['optimizer_input']
         
         end_optimal_plan_time = time.time()
@@ -245,7 +246,6 @@ async def get_optmized_driver_plan(
                     optimal_plan=optimal_plan,
                     all_loads=mapped_loads,
                     invalid_moves=invalid_moves,
-                    skipped_moves=skipped_moves,
                     plan_date=converted_plan_date,
                     timeZone=timeZone,
                     actionable_moves=actionable_moves

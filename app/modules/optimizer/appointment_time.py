@@ -236,13 +236,13 @@ async def get_appointment_time_v3(
         )
         
         optimal_plan = optimizer_output['optimal_plan']
-        skipped_moves = optimizer_output['skipped_moves']
+        invalid_moves = optimizer_output['invalid_moves']
         new_driver_schedule = optimizer_output['driver_schedule']
         driver_schedule.update(new_driver_schedule)
         
         # Handle unplanned moves
         planned_reference_numbers = [move.get('reference_number') for move in optimal_plan]
-        skipped_reference_numbers = [move.get('reference_number') for move in skipped_moves]
+        skipped_reference_numbers = [move.get('reference_number') for move in invalid_moves]
         unplanned_moves = [
             move for move in actionable_moves
             if move.get('reference_number') not in planned_reference_numbers and move.get('reference_number') not in skipped_reference_numbers

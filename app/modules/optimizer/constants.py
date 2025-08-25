@@ -46,6 +46,9 @@ CARRIER_CONFIGS = {
     '63039f613d347315e2a02a2d': {
         'rotation_order': ['owner_score', 'worked_yesterday', 'distance'],
         'allow_mismatched_appointment_times': True,
+        'vrp_assumptions': {
+            'PENALTY_FOR_COMPANY_DRIVER_LONG_DISTANCE_MOVE': 1000
+        }
     },
     # Quality Container
     '653a6813f7eb901615236816': {
