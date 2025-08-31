@@ -1,9 +1,12 @@
+from datetime import datetime
+import random
+import numpy as np
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 import logging
 
 from app.modules.reports.scheduler_report import verify_scheduled_plan
-from app.modules.reports.optimizer_report import get_driver_plan_stats_controller, compare_optimiser_plan
+from app.modules.reports.optimizer_report import get_driver_plan_stats_controller, compare_optimiser_plan, compare_optimizer_snapshot_report
 
 from app.modules.upload_model.upload_file import get_file_from_s3
 from vrp_optimizer.optimizer import Optimizer
@@ -191,6 +194,99 @@ async def get_driver_plan_from_s3(request: Request):
                 content={"message": str(e), "status": "error"},
                 status_code=500
             )
+
+    except Exception as e:
+        logger.error(e)
+        return JSONResponse(
+            content={"message": str(e), "status": "error"},
+            status_code=500
+        )
+
+
+@router.post("/compare_optimizer_snapshot")
+async def compare_optimizer_snapshot(request: Request):
+    """
+    Compare the optimizer plan output with actual moves
+    Only requires plan_id - handles all the steps internally:
+    1. Gets optimizer input from S3 (from production)
+    2. Runs the optimizer (on production)
+    3. Compares with actual moves
+    """
+    try:
+        import aiohttp
+        import ssl
+        
+        user_payload = request.state.user
+        carrier = user_payload.get('carrier')
+        
+        body = await request.json()
+        plan_id = body.get('plan_id')
+        plan_date_override = body.get('plan_date')  # Optional override for plan_date
+        
+        if not plan_id:
+            return JSONResponse(
+                content={"message": "Plan ID is required"},
+                status_code=400
+            )
+
+        # Get the authorization token from the request
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            return JSONResponse(
+                content={"message": "Authorization header is required"},
+                status_code=401
+            )
+
+        # Step 1: Call production API to get optimizer input from S3
+        async with aiohttp.ClientSession() as session:
+            # Call the production get_driver_plan_input_from_s3 endpoint
+            url1 = "https://dispatch-optimize.app.portpro.io/get_driver_plan_input_from_s3"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": auth_header
+            }
+            data = {"plan_id": plan_id}
+            
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            async with session.post(url1, headers=headers, json=data, ssl=ssl_context) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    raise Exception(f"Failed to get optimizer input: {error_text}")
+                response1 = await resp.json()
+                content = response1['result']
+            
+            # Override plan_date if provided
+            if plan_date_override:
+                content['plan_date'] = plan_date_override
+
+            # Step 2: Call production API to run the optimizer
+            random.seed(42)
+            np.random.seed(42)
+            optimizer = Optimizer(
+                moves=content['moves'],
+                drivers=content['drivers'], 
+                depot_locations=content['depot_locations'],
+                yard_locations=content['yard_locations'],
+                timezone=content['timezone'],
+                distance_unit=content['distance_unit'],
+                time_limit=content['time_limit'],
+                equipment_validations=content['equipment_validations'],
+                location_distance_matrix=content['location_distance_matrix'],
+                plan_start_minute=content['plan_start_minute'],
+                plan_end_minute=content['plan_end_minute'],
+                plan_date=datetime.fromisoformat(content['plan_date']),
+                carrier_id=carrier
+            )
+            _optimal_plan, _d_schedule = optimizer.optimize()
+        
+        # Step 3: Generate comparison report locally
+        result = await compare_optimizer_snapshot_report(user_payload, plan_id, _optimal_plan, content)
+
+        response = { "result": result, "status": "success" }
+        return JSONResponse(content=response, status_code=200)
 
     except Exception as e:
         logger.error(e)

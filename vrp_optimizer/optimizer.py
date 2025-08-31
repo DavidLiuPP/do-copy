@@ -4,6 +4,7 @@ import json
 from ortools.constraint_solver import pywrapcp
 from vrp_optimizer.mapping import get_event_times
 from vrp_optimizer.constraint_components import is_vehicle_compatible_with_node
+from ortools.constraint_solver import routing_enums_pb2
 from vrp_optimizer.helpers import (
     minute_from_distance,
     show_time_from_minute_of_day,
@@ -30,7 +31,8 @@ class Optimizer:
         yard_locations,
         timezone,
         distance_unit='mi',
-        ALGORITHM=VRP_ALGORITHMS["PARALLEL_CHEAPEST_INSERTION"],
+        # ALGORITHM=VRP_ALGORITHMS["PARALLEL_CHEAPEST_INSERTION"],
+        ALGORITHM=VRP_ALGORITHMS["PATH_MOST_CONSTRAINED_ARC"],
         time_limit = 5 * 60,
         equipment_validations = [],
         location_distance_matrix = [],
@@ -296,6 +298,9 @@ class Optimizer:
             [d.get('end_node') for d in self.VEHICLES]   # list of end depots for each vehicle
         )
         self.routing = pywrapcp.RoutingModel(self.manager)
+
+        solver = self.routing.solver()
+        solver.ReSeed(42)
 
     def add_disjunctions_and_penalties(self):
         """
@@ -579,7 +584,7 @@ class Optimizer:
         """
         self.search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         self.search_parameters.first_solution_strategy = self.ALGORITHM # PATH_MOST_CONSTRAINED_ARC, PATH_CHEAPEST_ARC, AUTOMATIC, PARALLEL_CHEAPEST_INSERTION
-        # self.search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH # TABU_SEARCH, SIMULATED_ANNEALING, GUIDED_LOCAL_SEARCH
+        self.search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH # TABU_SEARCH, SIMULATED_ANNEALING, GUIDED_LOCAL_SEARCH
         self.search_parameters.time_limit.seconds = int(self.time_limit)
         self.search_parameters.log_search = True
 

@@ -904,3 +904,211 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
             "status": "error",
             "message": str(e)
         }
+
+
+async def compare_optimizer_snapshot_report(user_payload: Dict[str, Any], plan_id: str, optimizer_output: List[Dict[str, Any]], optimizer_input: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Compare the optimizer plan output with actual moves
+    This function:
+    1. Takes the optimizer output directly (no need to re-run)
+    2. Transforms the output to match the expected format
+    3. Gets actual moves from the database
+    4. Generates comparison report
+    """
+    try:
+        from load_optimizer.get_optimal_plan_v3 import map_route_summary_to_driver_plan
+        
+        carrier = user_payload.get('carrier')
+        
+        # Extract plan date from the optimizer input
+        plan_date = optimizer_input.get('plan_date')
+        if not plan_date:
+            raise ValueError("Plan date not found in optimizer input")
+            
+        # Get timezone and other required data
+        timeZone = optimizer_input['timezone']
+        tz = pytz.timezone(timeZone)
+        converted_plan_date = tz.localize(datetime.strptime(plan_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
+        
+        # Get default yard locations
+        default_yard_locations = await get_default_yard_location(carrier)
+        for location in default_yard_locations:
+            depot_customer_id = location.get('customerId')
+            location['start_loc'] = [location.get('address').get('lat'), location.get('address').get('lng')]
+            location['end_loc'] = [location.get('address').get('lat'), location.get('address').get('lng')]
+            location['depot_customer_id'] = depot_customer_id
+            
+        carrier_preferences = await get_carrier_preferences(carrier)
+        user_settings = await get_equipment_validations(carrier)
+        equipment_validations = user_settings.get('equipment_validations', [])
+        
+        # Get the original moves from optimizer input
+        actionable_moves = optimizer_input.get('moves', [])
+        drivers = optimizer_input.get('drivers', [])
+        
+        # Transform VRP optimizer output to driver plan format
+        optimal_plan = map_route_summary_to_driver_plan(
+            actionable_moves, 
+            optimizer_output,  # Use the provided optimizer output directly
+            drivers, 
+            timeZone, 
+            converted_plan_date
+        )
+        
+        # Get actual completed moves for comparison
+        planning_windows = await get_planning_time_windows(carrier, converted_plan_date, None, [], timeZone)
+        planning_minutes = planning_windows.get('plan_window') or [0, 1440]
+        plan_from_time = converted_plan_date + timedelta(minutes=planning_minutes[0])
+        plan_to_time = converted_plan_date + timedelta(minutes=planning_minutes[1])
+        
+        user_payload['default_yard_locations'] = default_yard_locations
+        user_payload['timeZone'] = timeZone
+        user_payload['distanceUnit'] = carrier_preferences.get('distanceUnit', 'mi')
+        
+        # Get actual completed moves
+        loads = await get_completed_moves(
+            user_payload,
+            from_time=plan_from_time,
+            to_time=plan_to_time,
+            plan_branch=[],
+            plan_drivers=[driver.get('_id') for driver in drivers]
+        )
+        
+        container_sizes_map, container_types_map = await get_container_sizes_and_types_labels(carrier, loads)
+        mapped_loads = map_loads_for_scheduler(loads)
+        
+        # Create appointment dict
+        appointment_dict = {}
+        for load in mapped_loads:
+            appointment_dict[load.get('_id')] = {}
+            if load.get('pickupFromTime') and load.get('pickupToTime'):
+                pickup_from = datetime.fromisoformat(load.get('pickupFromTime')).astimezone(tz).strftime('%Y-%m-%d %I:%M %p')
+                pickup_to = datetime.fromisoformat(load.get('pickupToTime')).astimezone(tz).strftime('%I:%M %p')
+                appointment_dict[load.get('_id')]['PULLCONTAINER'] = f"{pickup_from} - {pickup_to}"
+                
+            if load.get('deliveryFromTime') and load.get('deliveryToTime'):
+                delivery_from = datetime.fromisoformat(load.get('deliveryFromTime')).astimezone(tz).strftime('%Y-%m-%d %I:%M %p')
+                delivery_to = datetime.fromisoformat(load.get('deliveryToTime')).astimezone(tz).strftime('%I:%M %p')
+                appointment_dict[load.get('_id')]['DELIVERLOAD'] = f"{delivery_from} - {delivery_to}"
+                
+            if load.get('returnFromTime') and load.get('returnToTime'):
+                return_from = datetime.fromisoformat(load.get('returnFromTime')).astimezone(tz).strftime('%Y-%m-%d %I:%M %p')
+                return_to = datetime.fromisoformat(load.get('returnToTime')).astimezone(tz).strftime('%I:%M %p')
+                appointment_dict[load.get('_id')]['RETURNCONTAINER'] = f"{return_from} - {return_to}"
+        
+        # Map actual moves for reporting
+        actual_actionable_moves = await map_loads_for_reporting(user_payload, mapped_loads, converted_plan_date)
+        
+        # Get drivers with HOS data
+        drivers_actual = await get_drivers(carrier, converted_plan_date, [], {'exclude_account_hold': False})
+        drivers_actual = await get_hos_data_for_drivers(drivers_actual, carrier)
+        
+        # Create actual plan from completed moves
+        actual_plan = []
+        for move in actual_actionable_moves:
+            move_copy = move['move'].copy()
+            for index, event in enumerate(move_copy):
+                event['enroute'] = event['arrived']
+                event['arrived'] = event['departed']
+                if index + 1 < len(move_copy):
+                    event['departed'] = move_copy[index + 1]['arrived']
+                    
+            driver_dict = next((driver for driver in drivers_actual if driver.get('_id') == move_copy[0].get('driver')), None)
+            
+            if not driver_dict:
+                continue
+                
+            actual_plan.append({
+                "load_id": move.get('_id'),
+                "type_of_load": move.get('type_of_load'),
+                "reference_number": move.get('reference_number'),
+                "assigned_driver": driver_dict.get('_id') if driver_dict else None,
+                "assigned_driver_name": f"{driver_dict.get('name')} {driver_dict.get('last_name')}" if driver_dict else '',
+                "enroute_time": move_copy[0].get('enroute'),
+                "move": move_copy,
+            })
+        
+        # Group and sort plans by driver
+        actual_plan_by_driver = group_and_sort_plan_by_driver(actual_plan)
+        optimal_plan_by_driver = group_and_sort_plan_by_driver(optimal_plan)
+        
+        # Create detailed entries for comparison
+        actual_plan_detailed_entries = create_plan_detailed_entries_compare(
+            carrier=carrier,
+            default_yard_locations=default_yard_locations,
+            plan_by_driver=actual_plan_by_driver,
+            tz=tz,
+            driver_features=drivers_actual,
+            appointment_dict=appointment_dict,
+            container_sizes_map=container_sizes_map,
+            container_types_map=container_types_map,
+            equipment_validations=equipment_validations
+        )
+        
+        optimal_plan_detailed_entries = create_plan_detailed_entries_compare(
+            carrier=carrier,
+            default_yard_locations=default_yard_locations,
+            plan_by_driver=optimal_plan_by_driver,
+            tz=tz,
+            driver_features=drivers_actual,
+            appointment_dict=appointment_dict,
+            container_sizes_map=container_sizes_map,
+            container_types_map=container_types_map,
+            equipment_validations=equipment_validations
+        )
+        
+        # Calculate statistics
+        actual_total_moves = len(actual_actionable_moves)
+        optimal_total_moves = len(optimal_plan)
+        
+        actual_total_drivers = len(actual_plan_by_driver)
+        optimal_total_drivers = len(optimal_plan_by_driver)
+        
+        actual_empty_miles = sum(entry['empty_miles'] for entry in actual_plan_detailed_entries)
+        optimal_empty_miles = sum(entry['empty_miles'] for entry in optimal_plan_detailed_entries)
+        
+        actual_trip_miles = sum(entry['trip_miles'] for entry in actual_plan_detailed_entries)
+        optimal_trip_miles = sum(entry['trip_miles'] for entry in optimal_plan_detailed_entries)
+        
+        actual_total_miles = actual_empty_miles + actual_trip_miles
+        optimal_total_miles = optimal_empty_miles + optimal_trip_miles
+        
+        # Find unplanned moves
+        unplanned_moves = find_unplanned_moves(actionable_moves, optimal_plan)
+        
+        return {
+            "status": "success",
+            "message": "Snapshot comparison completed successfully",
+            "total_moves": {
+                "actual": actual_total_moves,
+                "optimal": optimal_total_moves
+            },
+            "total_drivers": {
+                "actual": actual_total_drivers,
+                "optimal": optimal_total_drivers
+            },
+            "empty_miles": {
+                "actual": actual_empty_miles,
+                "optimal": optimal_empty_miles
+            },
+            "trip_miles": {
+                "actual": actual_trip_miles,
+                "optimal": optimal_trip_miles
+            },
+            "total_miles": {
+                "actual": actual_total_miles,
+                "optimal": optimal_total_miles
+            },
+            "comparison_data": {
+                "actual_plan_detailed_entries": actual_plan_detailed_entries,
+                "optimal_plan_detailed_entries": optimal_plan_detailed_entries,
+                "unplanned_moves": json.loads(json.dumps(unplanned_moves, default=str))
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in compare_optimizer_snapshot_report: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
