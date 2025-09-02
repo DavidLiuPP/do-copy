@@ -81,9 +81,14 @@ async def get_drayage_intelligence(carrier: str, projection: List[str] = None) -
                 else:
                     row_data['exclude_locations_for_scheduler'] = []
                 
+                if row_data.get('drop_hook_locations'):
+                    if isinstance(row_data['drop_hook_locations'], str):
+                        row_data['drop_hook_locations'] = json.loads(row_data['drop_hook_locations'])
+                else:
+                    row_data['drop_hook_locations'] = []
+                
                 return row_data
             return {}
     
     except Exception as e:
-        logger.error(f"Error getting drayage intelligence: {str(e)}")
-        return {}
+        raise e

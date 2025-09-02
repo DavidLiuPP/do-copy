@@ -12,3 +12,7 @@ output "service_name" {
 output "ecr" {
   value = aws_ecr_repository.this.repository_url
 }
+
+output "day_plan_service_name" {
+  value = module.day-plan-ecs-service.service_name
+}

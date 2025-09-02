@@ -184,7 +184,6 @@ class EventService:
             return True
         except Exception as e:
             logger.error(f"Error processing message: {str(e)}")
-            logger.info(f"Message: {message}")
             return False
 
     async def process_load_message(self, ch, method, properties, body) -> None:

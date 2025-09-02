@@ -4,59 +4,6 @@ from app.synced_db_connection import PostgresConnection
 
 logger = logging.getLogger(__name__)
 
-async def get_turn_around_time(carrier: str, from_id: str, to_id: str) -> List[Dict[str, Any]]:
-    """
-    Retrieve turn around time data from PostgreSQL for a given carrier and plan date.
-    
-    Args:
-        carrier: Carrier ID to fetch turn around time for
-        plan_date: Date to fetch turn around time for in format YYYY-MM-DD
-        
-    Returns:
-        List of dictionaries containing the turn around time data
-        
-    Raises:
-        Exception: If there's an error during database operations
-    """
-    try:
-        postgres = PostgresConnection()
-        pool = await postgres.get_pool()
-        
-        async with pool.acquire() as conn:
-            query = """
-                SELECT * FROM turn_around_time 
-                WHERE carrier = $1 AND from_id = $2 AND to_id = $3
-                LIMIT 1
-            """
-
-            row = await conn.fetchrow(query, carrier, from_id if from_id else '', to_id)
-            row = dict(row) if row else None
-            if row is None:
-                return 40
-            return row.get('turn_around', 40)
-            
-    except Exception as e:
-        logger.error(f"Error retrieving turn around times from database: {str(e)}")
-        raise
-
-async def get_turn_around_time_for_move(carrier: str, move: Dict[str, Any]) -> Dict[str, Any]:
-    try:
-        for indx, event in enumerate(move):
-            prev_event = move[indx - 1] if indx > 0 else None
-            
-            if prev_event is None:
-                if event.get('customerId') is not None:
-                    move[indx]['turn_around_time'] = await get_turn_around_time(carrier, None, event.get('customerId'))
-            else:
-                if prev_event is not None and prev_event.get('customerId') is not None and event.get('customerId') is not None:
-                    move[indx]['turn_around_time'] = await get_turn_around_time(carrier, prev_event.get('customerId'), event.get('customerId'))
-
-        total_turn_around_time = sum(event.get('turn_around_time', 0) for event in move)
-        return total_turn_around_time
-    except Exception as e: 
-        logger.error(f"Error retrieving turn around time for move: {str(e)}")
-        raise
-
 async def get_waiting_time(carrier: str, customer_ids: List[str]) -> Dict[str, Any]:
     """
     Retrieve waiting time data from PostgreSQL for a given carrier and customer IDs.
@@ -102,7 +49,12 @@ async def get_waiting_time(carrier: str, customer_ids: List[str]) -> Dict[str, A
                     total += wt.get(f"{hour:02d}", 60)
                 avg_wait = int(total / 7)
                 
-                waiting_time_dict[(wt['customer_id'],wt['type'], wt['is_liveunload'])] = {
+                # Ensure all key components are hashable (convert to string if needed)
+                customer_id = str(wt['customer_id']) if wt['customer_id'] is not None else ''
+                event_type = str(wt['type']) if wt['type'] is not None else ''
+                is_liveunload = bool(wt['is_liveunload']) if wt['is_liveunload'] is not None else False
+                
+                waiting_time_dict[(customer_id, event_type, is_liveunload)] = {
                     'waiting_time': avg_wait,
                     'hourly_distribution': wt
                 }

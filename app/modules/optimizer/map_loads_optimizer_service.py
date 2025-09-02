@@ -8,12 +8,14 @@ from app.postgres_services.drayage_intelligence_service import get_drayage_intel
 from app.postgres_services.terminal_warehouse_service import get_office_hours
 from app.postgres_services.turn_around_time import get_waiting_time, add_waiting_time_to_move
 
-from app.modules.optimizer.constants import VALID_EVENT_TYPES, CARRIER_CONFIGS
+from app.modules.optimizer.constants import VALID_EVENT_TYPES, CARRIER_CONFIGS, DROP_EVENT_TYPES
 from app.modules.optimizer.utility import (
     check_move_validity, 
     modify_move_for_invalid_move, 
     populate_appointment_times_to_events
 )
+
+from vrp_optimizer.helpers import is_move_empty
 
 
 # Configure module logger
@@ -61,6 +63,18 @@ async def map_actionable_moves(
                 load_copy['route'] = '_'.join([move.get('customerId', '') for move in actionable_move])
                 load_copy['distance'] = sum(event.get('distance', 0) for event in actionable_move)
                 load_copy['load_assigned_date'] = actionable_move[0].get('loadAssignedDate')
+
+                actionable_move = populate_appointment_times_to_events(
+                    user_payload,
+                    [load_copy],
+                    actionable_move,
+                    converted_plan_date,
+                    time_prediction,
+                    location_office_hours
+                )
+
+                load_copy['move'] = actionable_move
+                    
                 actionable_moves.append(load_copy)
                 continue
             
@@ -111,6 +125,8 @@ async def map_actionable_moves(
                     time_prediction, location_office_hours
                 )
 
+                previous_reason = reason
+
                 is_valid_move, reason = check_move_validity(
                     user_payload=user_payload,
                     move=modified_move,
@@ -125,6 +141,7 @@ async def map_actionable_moves(
                 if is_valid_move:
                     actionable_move = modified_move
                     load_copy['is_modified_move'] = True
+                    load_copy['modification_reason'] = previous_reason
                 else:
                     invalid_moves.append({
                         'reference_number': load_copy.get('reference_number', ''),
@@ -304,7 +321,8 @@ async def map_loads_for_optimizer(
     plan_range: Dict[str, Any] = {},
     plan_drivers = None,
     options: Dict[str, Any] = {},
-    reference_numbers: List[str] = []
+    reference_numbers: List[str] = [],
+    is_in_day_plan: bool = False
 ) -> List[Dict[str, Any]]:
     try:
         loads_with_actionable_moves = []
@@ -337,6 +355,8 @@ async def map_loads_for_optimizer(
         for load in loads:
             # find scheduled plan for the load using reference number, should be an array of all that matches
             scheduled_plan = [plan for plan in scheduled_plans if plan['reference_number'] == load['reference_number']]
+            is_reposition_scheduled = any(plan['predicted_next_move'] == 'Reposition' for plan in scheduled_plan)
+            scheduled_plan = [plan for plan in scheduled_plan if plan['predicted_next_move'] != 'Reposition']
             is_move_included = False
 
             # find actionable move from the load
@@ -349,20 +369,31 @@ async def map_loads_for_optimizer(
                 # skip if the move is not in the scheduled plan or not manually planned
                 is_manually_planned = any(event.get('is_manually_planned') for event in actionable_move)
                 is_active_move = any(event.get('arrived') and not event.get('isVoidOut') for event in actionable_move)
+                move_id = actionable_move[0].get('moveId')
 
                 event_types = [event.get('type') for event in actionable_move]
                 scheduled_events_in_move = [plan for plan in scheduled_plan if plan.get('profile_type', '') in event_types]
                 has_scheduled_appointment = any(plan['scheduled_appointment_from'] for plan in scheduled_events_in_move)
 
+                is_reposition_move = False
+                if is_reposition_scheduled:
+                    is_reposition_move = any(event.get('type') in DROP_EVENT_TYPES and event.get('prevType') == 'DELIVERLOAD' 
+                        for event in actionable_move) and \
+                        not any(event.get('type') in VALID_EVENT_TYPES for event in actionable_move)
+
+                    if is_reposition_move:
+                        scheduled_events_in_move = True
+
+
                 if is_manually_planned:
                     load_assigned_date = datetime.fromisoformat(actionable_move[0].get('loadAssignedDate'))
-                    active_event_departed = next(
-                        (datetime.fromisoformat(event.get('departed'))
+                    active_event_arrived = next(
+                        (datetime.fromisoformat(event.get('arrived'))
                          for event in actionable_move
-                         if event.get('departed') and not event.get('isVoidOut')),
+                         if event.get('arrived') and not event.get('isVoidOut')),
                         None
                     )
-                    driver_working_date = active_event_departed if active_event_departed else load_assigned_date
+                    driver_working_date = active_event_arrived if active_event_arrived else load_assigned_date
 
                     if not (plan_range.get('shift_from_time') <= driver_working_date <= plan_range.get('shift_to_time')) and not has_scheduled_appointment:
                         continue
@@ -370,12 +401,6 @@ async def map_loads_for_optimizer(
                 elif not scheduled_events_in_move:
                     continue
 
-                # check if the move is already in progress on previous days
-                arrived_event = next((event for event in actionable_move if event.get('arrived')), None)
-                if (arrived_event and not arrived_event.get('isVoidOut') and arrived_event.get('driver') and
-                    (datetime.fromisoformat(arrived_event.get('arrived')) < converted_plan_date)):
-                    load['error_reason'] = 'MOVE_IN_PROGRESS'
-                    continue
 
                 # if previous move is not completed, skip the current move
                 previous_move = moves[move_index - 1] if move_index > 0 else None
@@ -402,7 +427,8 @@ async def map_loads_for_optimizer(
                     load['error_reason'] = 'INVALID_DRIVER'
                     continue
 
-                
+                is_empty_move = is_move_empty(load['type_of_load'], load['driverOrder'], move_id)
+                load['is_empty_move'] = is_empty_move
                 load_copy = load.copy()
                 del load_copy['driverOrder']
                 
@@ -418,12 +444,20 @@ async def map_loads_for_optimizer(
                 load_copy['move'] = actionable_move
                 load_copy['move_index'] = move_index
 
+                if is_manually_planned and is_in_day_plan:
+                    load_copy['is_manually_planned'] = True
+                    load_copy['assigned_driver'] = actionable_move[0].get('driver')
+                    load_copy['is_active_move'] = True
+
                 if is_manually_planned and load['reference_number'] not in reference_numbers:
                     load_copy['is_manually_planned'] = True
                     load_copy['assigned_driver'] = actionable_move[0].get('driver')
 
                     if is_active_move:
                         load_copy['is_active_move'] = True
+                
+                if is_reposition_move and not load_copy.get('at_risk_of_demurrage'):
+                    load_copy['is_optional_move'] = True
 
                 use_prepull_driver_for_deliver_move = CARRIER_CONFIGS.get(user_payload.get('carrier'), {}).get('use_prepull_driver_for_deliver_move', None)
 

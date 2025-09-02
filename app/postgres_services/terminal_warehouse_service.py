@@ -91,5 +91,4 @@ async def get_office_hours(carrier: str, customer_ids: str, timeZone: str) -> Li
             return location_office_hours
             
     except Exception as e:
-        logger.error(f"Error retrieving office hours from database: {str(e)}")
-        raise
+        raise e

@@ -37,8 +37,20 @@ ACTIONABLE_PROFILE_TYPES: Dict[str, List[str]] = {
     "Pull-Deliver-Return": ["PULLCONTAINER", "DELIVERLOAD", "RETURNCONTAINER"],
     "Deliver": ["DELIVERLOAD"],
     "Deliver-Return": ["DELIVERLOAD", "RETURNCONTAINER"],
-    "Return": ["RETURNCONTAINER"]
+    "Return": ["RETURNCONTAINER"],
+    "Reposition": ["DROPCONTAINER", "LIFTOFF"]
 }
+
+VALID_EVENT_TYPES: List[str] = [
+    'PULLCONTAINER',
+    'DELIVERLOAD',
+    'RETURNCONTAINER'
+]
+
+DROP_EVENT_TYPES: List[str] = [
+    'DROPCONTAINER',
+    'LIFTOFF'
+]
 
 APPOINTMENT_STATUS = {
     "NEED_APPOINTMENT": 'need_appointment',

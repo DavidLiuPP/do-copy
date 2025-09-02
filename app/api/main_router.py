@@ -8,6 +8,7 @@ from app.modules.optimizer.driver_plan import get_optmized_driver_plan, get_opti
 from app.modules.optimizer.driver_plan_edit import add_move_to_optimizer_plan, remove_move_from_optimizer_plan, reassign_move_to_optimizer_plan
 from app.modules.optimizer.eta_service import store_driver_eta_details, get_eta_details
 from fastapi import BackgroundTasks
+from app.modules.optimizer.driver_plan import manage_in_day_plan
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -106,6 +107,48 @@ async def generate_driver_plan(request: Request, background_tasks: BackgroundTas
             shift=shift,
             background_tasks=background_tasks,
             allow_late_arrivals=allow_late_arrivals
+        )
+
+        response = { "result": result, "status": "success" }
+        return JSONResponse(content=response, status_code=200)
+
+    except Exception as e:
+        logger.error(e)
+        return JSONResponse(
+            content={"message": str(e), "status": "error"},
+            status_code=500
+        )
+
+@router.post("/manage_in_day_plan")
+async def manage_in_day_plan_controller(request: Request):
+    """
+    Get the driver plan for the given date
+
+    Parameters:
+        plan_date (str): The date of the plan : required
+    """
+    try:
+        body = await request.json()
+        user_payload = request.state.user
+        carrier = user_payload.get('carrier')
+        if not carrier:
+            return JSONResponse(
+                content={"message": "Carrier ID not found in token"},
+                status_code=400
+            )
+        
+        driver_schedules = body.get('driverInfo', [])
+        behind_schedule_moves = body.get('behind_schedule_moves', [])
+        branch = body.get('branch', None)
+        shift = body.get('shift', None)
+        
+        result = await manage_in_day_plan(
+            user_payload=user_payload, 
+            driver_schedules=driver_schedules,
+            behind_schedule_moves=behind_schedule_moves,
+            branch=branch,
+            shift=shift
+
         )
 
         response = { "result": result, "status": "success" }

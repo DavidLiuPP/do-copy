@@ -6,6 +6,11 @@ VALID_EVENT_TYPES: List[str] = [
     "RETURNCONTAINER"
 ]
 
+DROP_EVENT_TYPES: List[str] = [
+    "DROPCONTAINER",
+    "LIFTOFF"
+]
+
 EVENT_TIME_MAP = {
     'PULLCONTAINER': 'pickupFromTime',
     'DELIVERLOAD': 'deliveryFromTime', 

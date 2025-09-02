@@ -43,3 +43,19 @@ jobs:
         AWS_SECRETS_MANAGER_ID: dispatch-optimize-queue.app.portpro.io
         approval: 0
     secrets: inherit
+
+  DAY-PLAN-PRODUCTION:
+    if: github.ref == vars.DAY_PLAN_PROD_BRANCH
+    needs: approval
+    uses: PortPro-Technologies-Inc/portpro-tf-app/.github/workflows/ecs-deploy.yml@main
+    with: 
+        environment: production
+        URL: https://dayplan-do.app.portpro.io/
+        ECS_CLUSTER: portpro-live-cluster
+        ECS_SERVICE: dayplan-do-live-service
+        ECS_TASK_DEFINITION: dayplan-do-live-taskdefinition
+        CONTAINER_NAME: dayplan-do-live
+        ECR_REPOSITORY: dayplan-do.app.portpro.io
+        AWS_SECRETS_MANAGER_ID: dayplan-do.app.portpro.io
+        approval: 0
+    secrets: inherit    

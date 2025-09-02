@@ -127,7 +127,7 @@ def calculate_move_eta(
         first_event = load.get('move')[0]
         if not first_event.get('arrived'):
             start_times = estimate_move_start_time(load.get('move'), timeZone, distance_unit)
-            move_eta['start_time_window'] = [t.isoformat() for t in start_times]
+            move_eta['start_time_window'] = [t.astimezone(pytz.UTC).isoformat() for t in start_times]
         
         move = load.get('move')
         for index, event in enumerate(move):

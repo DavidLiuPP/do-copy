@@ -4,7 +4,6 @@ import json
 from ortools.constraint_solver import pywrapcp
 from vrp_optimizer.mapping import get_event_times
 from vrp_optimizer.constraint_components import is_vehicle_compatible_with_node
-from ortools.constraint_solver import routing_enums_pb2
 from vrp_optimizer.helpers import (
     minute_from_distance,
     show_time_from_minute_of_day,
@@ -31,8 +30,7 @@ class Optimizer:
         yard_locations,
         timezone,
         distance_unit='mi',
-        # ALGORITHM=VRP_ALGORITHMS["PARALLEL_CHEAPEST_INSERTION"],
-        ALGORITHM=VRP_ALGORITHMS["PATH_MOST_CONSTRAINED_ARC"],
+        ALGORITHM=VRP_ALGORITHMS["PARALLEL_CHEAPEST_INSERTION"],
         time_limit = 5 * 60,
         equipment_validations = [],
         location_distance_matrix = [],
@@ -40,7 +38,8 @@ class Optimizer:
         plan_end_minute = 1440,
         carrier_id = None,
         allow_late_arrivals_upto_n_minutes = 0,
-        plan_date = None
+        plan_date = None,
+        max_time_dimension_minutes = 1440
     ):
         """
             Optimizer is a class that optimizes the moves across the drivers efficiently.
@@ -92,6 +91,7 @@ class Optimizer:
         self.plan_end_minute = plan_end_minute
         self.allow_late_arrivals_upto_n_minutes = allow_late_arrivals_upto_n_minutes
         self.plan_date = plan_date
+        self.max_time_dimension_minutes = max_time_dimension_minutes
 
     def filter_depots(self, depot_locations, drivers):
         """
@@ -103,7 +103,8 @@ class Optimizer:
         vehicle_depots = set([v.get('depot_hash_key') for v in drivers])
         for depot in depot_locations:
             hash_key = depot.get('hash_key')
-            if hash_key in vehicle_depots:
+            is_depot_already_present = any(d.get('hash_key') == hash_key for d in depots)
+            if hash_key in vehicle_depots and not is_depot_already_present:
                 depots.append(depot)
 
         return depots
@@ -224,6 +225,7 @@ class Optimizer:
             route_distance = node.get('route_distance', 0)
 
             node_details = {
+                **node,
                 'route_distance': int(route_distance),
                 'locations': node.get('locations', []),
                 'time_to_process_move': int(
@@ -244,28 +246,12 @@ class Optimizer:
                 'terminal': node.get('terminal', ""),
                 'isDepot': node.get('isDepot', False),
                 'strictly_coupled_move': node.get('strictly_coupled_move', None),
-                'preferred_states': []
             }
-
-            if node.get('move', []):
-                node_details['preferred_states'] = [f"{event.get('state')}, {event.get('country')}" for event in node.get('move', []) if event.get('state') and event.get('country')]
-
-            if node.get('warehouse_ids'):
-                node_details['warehouse_ids'] = node.get('warehouse_ids')
 
             route_index_dict[node.get('_id')+'_'+str(node.get('move_index'))] = node_index
 
             if node.get('isDepot'):
                 depot_index_dict[node.get('hash_key')] = node_index
-
-            if node.get('assigned_driver', None):
-                node_details['assigned_driver'] = node.get('assigned_driver', '')
-
-            if node.get('suggested_driver', None) or node.get('assigned_driver', None):
-                node_details['suggested_driver'] = node.get('assigned_driver', node.get('suggested_driver', ''))
-
-            if node.get('is_free_flow_move', False):
-                node_details['is_free_flow_move'] = node.get('is_free_flow_move', False)
 
             node_data.append(node_details)
 
@@ -299,9 +285,6 @@ class Optimizer:
         )
         self.routing = pywrapcp.RoutingModel(self.manager)
 
-        solver = self.routing.solver()
-        solver.ReSeed(42)
-
     def add_disjunctions_and_penalties(self):
         """
             This method adds the disjunctions and penalties to the solver.
@@ -321,21 +304,34 @@ class Optimizer:
             Set the penalty for using a vehicle. ( It helps in reducing the number of vehicles used ) 
         """
 
-        def get_skip_penalty(node_spec):
-            skip_penalty = self.assumptions.get('SKIP_NODE_PENALTY')   # Prioritize longer routes
-            return skip_penalty
+        # def get_skip_penalty(node_spec):
+        #     skip_penalty = self.assumptions.get('SKIP_NODE_PENALTY')   # Prioritize longer routes
+        #     return skip_penalty
 
-        # Get the maximum skip penalty for all nodes
-        max_skip_penalty = max([get_skip_penalty(self.NODE_DATA[node]) for node in range(len(self.DEPOTS), len(self.NODE_DATA))])
+        # # Get the maximum skip penalty for all nodes
+        # max_skip_penalty = max([get_skip_penalty(self.NODE_DATA[node]) for node in range(len(self.DEPOTS), len(self.NODE_DATA))])
+
+        # for node in range(len(self.DEPOTS), len(self.NODE_DATA)):
+        #     node_spec = self.NODE_DATA[node]
+            
+        #     if node_spec.get('suggested_driver', False):
+        #         self.routing.AddDisjunction([self.manager.NodeToIndex(node)], max_skip_penalty + self.assumptions.get('ADDITIONAL_PENALTY_FOR_ASSIGNED_MOVE'))
+        #     else:
+        #         skip_penalty = get_skip_penalty(node_spec)
+        #         self.routing.AddDisjunction([self.manager.NodeToIndex(node)], skip_penalty, True)
 
         for node in range(len(self.DEPOTS), len(self.NODE_DATA)):
             node_spec = self.NODE_DATA[node]
+
+            skip_penalty = self.assumptions.get('SKIP_NODE_PENALTY')   # Prioritize longer routes
+            
+            if node_spec.get('is_optional_move', False):
+                skip_penalty = self.assumptions.get('SKIP_NODE_PENALTY_FOR_OPTIONAL_MOVE')
             
             if node_spec.get('suggested_driver', False):
-                self.routing.AddDisjunction([self.manager.NodeToIndex(node)], max_skip_penalty + self.assumptions.get('ADDITIONAL_PENALTY_FOR_ASSIGNED_MOVE'))
-            else:
-                skip_penalty = get_skip_penalty(node_spec)
-                self.routing.AddDisjunction([self.manager.NodeToIndex(node)], skip_penalty, True)
+                skip_penalty = skip_penalty + self.assumptions.get('ADDITIONAL_PENALTY_FOR_ASSIGNED_MOVE')
+
+            self.routing.AddDisjunction([self.manager.NodeToIndex(node)], skip_penalty, True)
 
         for vehicle_id, vehicle in enumerate(self.VEHICLES):
             for node_id, node_specification in enumerate(self.NODE_DATA):
@@ -384,7 +380,7 @@ class Optimizer:
         self.routing.AddDimension(
             transit_callback_index,
             self.assumptions.get('MAX_WAITING_TIME_BETWEEN_NODES', 60),           # The time in minutes to wait before visiting the next node
-            self.plan_end_minute,              # Max time
+            self.max_time_dimension_minutes,              # Max time
             False,             # Don't force start at zero
             time
         )
@@ -560,10 +556,9 @@ class Optimizer:
 
                     index1 = self.manager.NodeToIndex(self.route_index_dict.get(node_key))
                     index2 = self.manager.NodeToIndex(self.route_index_dict.get(coupled_move_key))
-                    
-                    self.routing.solver().Add(self.routing.VehicleVar(index1) == self.routing.VehicleVar(index2))
-                    self.routing.solver().Add(self.routing.NextVar(index1) == index2)
 
+                    self.routing.AddPickupAndDelivery(index1, index2)
+                    self.routing.solver().Add(self.routing.VehicleVar(index1) == self.routing.VehicleVar(index2))
     
     def set_search_parameters(self):
         """
@@ -584,7 +579,7 @@ class Optimizer:
         """
         self.search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         self.search_parameters.first_solution_strategy = self.ALGORITHM # PATH_MOST_CONSTRAINED_ARC, PATH_CHEAPEST_ARC, AUTOMATIC, PARALLEL_CHEAPEST_INSERTION
-        self.search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH # TABU_SEARCH, SIMULATED_ANNEALING, GUIDED_LOCAL_SEARCH
+        # self.search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH # TABU_SEARCH, SIMULATED_ANNEALING, GUIDED_LOCAL_SEARCH
         self.search_parameters.time_limit.seconds = int(self.time_limit)
         self.search_parameters.log_search = True
 
@@ -646,59 +641,63 @@ class Optimizer:
         Returns:
             Dict containing route summary or None if route is invalid
         """
-        visited_nodes = []
-        empty_miles = 0
-        index = self.routing.Start(vehicle_id)
-        prev_node_id = None
+        try:
+            visited_nodes = []
+            empty_miles = 0
+            index = self.routing.Start(vehicle_id)
+            prev_node_id = None
 
-        # Process each node in vehicle's route
-        while not self.routing.IsEnd(index):
-            node_id = self.manager.IndexToNode(index)
-            time_var = self.time_dimension.CumulVar(index)
-            completion_time = solution.Value(time_var)
-            
-            node_details = self._process_node(
-                node_id=node_id,
-                completion_time=completion_time,
-                visited_nodes=visited_nodes,
-                prev_node_id=prev_node_id
-            )
-            
-            if node_details:
-                empty_miles += node_details.get('empty_miles', 0)
-                visited_nodes.append(node_details['node_data'])
+            # Process each node in vehicle's route
+            while not self.routing.IsEnd(index):
+                node_id = self.manager.IndexToNode(index)
+                time_var = self.time_dimension.CumulVar(index)
+                completion_time = solution.Value(time_var)
+                
+                node_details = self._process_node(
+                    node_id=node_id,
+                    completion_time=completion_time,
+                    visited_nodes=visited_nodes,
+                    prev_node_id=prev_node_id
+                )
+                
+                if node_details:
+                    empty_miles += node_details.get('empty_miles', 0)
+                    visited_nodes.append(node_details['node_data'])
+                    prev_node_id = node_id
+                index = solution.Value(self.routing.NextVar(index))
+
+            # Only process routes with actual stops
+            if len(visited_nodes) > 1:
+                
+                # add chassis termination event for the last move
                 prev_node_id = node_id
-            index = solution.Value(self.routing.NextVar(index))
+                node_id = self.manager.IndexToNode(index)
+                node_data = self.NODE_DATA[node_id]
+                chassis_activity_for_node = self.CHASSIS_MATRIX[prev_node_id][node_id]
+                if chassis_activity_for_node.get('activity') != CHASSIS_ACTIVITIES["NO_ACTION"]:
+                    node_data['chassis_activity'] = chassis_activity_for_node.get('activity')
+                    node_data['drop_yard'] = chassis_activity_for_node.get('drop_yard')
+                    node_data['hook_yard'] = chassis_activity_for_node.get('hook_yard')
 
-        # Only process routes with actual stops
-        if len(visited_nodes) > 1:
-            
-            # add chassis termination event for the last move
-            prev_node_id = node_id
-            node_id = self.manager.IndexToNode(index)
-            node_data = self.NODE_DATA[node_id]
-            chassis_activity_for_node = self.CHASSIS_MATRIX[prev_node_id][node_id]
-            if chassis_activity_for_node.get('activity') != CHASSIS_ACTIVITIES["NO_ACTION"]:
-                node_data['chassis_activity'] = chassis_activity_for_node.get('activity')
-                node_data['drop_yard'] = chassis_activity_for_node.get('drop_yard')
-                node_data['hook_yard'] = chassis_activity_for_node.get('hook_yard')
+                _, _ = get_chassis_event_for_nodes(
+                    visited_nodes[-1], node_data, self.YARDS, self.distance_unit, self.assumptions.get('TIME_TO_SWITCH_CHASSIS')
+                )
 
-            _, _ = get_chassis_event_for_nodes(
-                visited_nodes[-1], node_data, self.YARDS, self.distance_unit, self.assumptions.get('TIME_TO_SWITCH_CHASSIS')
-            )
+                if node_data.get('isDepot'):
+                    node_data.pop('chassis_activity', None)
+                    node_data.pop('drop_yard', None)
+                    node_data.pop('hook_yard', None)
 
-            if node_data.get('isDepot'):
-                node_data.pop('chassis_activity', None)
-                node_data.pop('drop_yard', None)
-                node_data.pop('hook_yard', None)
-
-            return self._create_route_summary(
-                vehicle_id=vehicle_id,
-                visited_nodes=visited_nodes,
-                empty_miles=empty_miles,
-                get_route_distance=get_route_distance
-            )
-        return None
+                return self._create_route_summary(
+                    vehicle_id=vehicle_id,
+                    visited_nodes=visited_nodes,
+                    empty_miles=empty_miles,
+                    get_route_distance=get_route_distance
+                )
+            return None
+        except Exception as e:
+            print(f"Error in _process_vehicle_route: {str(e)}")
+            return None
 
     def _process_node(self, node_id, completion_time, visited_nodes, prev_node_id):
         """
@@ -706,89 +705,97 @@ class Optimizer:
         
         Returns node data and any empty miles to previous node.
         """
-        node_data = self.NODE_DATA[node_id]
-        if node_data.get('isDepot', False):
-            return {
-                'node_data': {
-                    'move_completed_minute': completion_time,
-                    'start_loc': node_data['start_loc'],
-                    'end_loc': node_data['end_loc'],
-                    'isDepot': True
+        try:
+            node_data = self.NODE_DATA[node_id]
+            if node_data.get('isDepot', False):
+                return {
+                    'node_data': {
+                        'move_completed_minute': completion_time,
+                        'start_loc': node_data['start_loc'],
+                        'end_loc': node_data['end_loc'],
+                        'isDepot': True
+                    }
                 }
+                
+            if not visited_nodes:
+                return None
+                
+            previous_node = visited_nodes[-1]
+
+            chassis_activity_for_node = self.CHASSIS_MATRIX[prev_node_id][node_id]
+            if chassis_activity_for_node.get('activity') != CHASSIS_ACTIVITIES["NO_ACTION"]:
+                node_data['chassis_activity'] = chassis_activity_for_node.get('activity')
+                node_data['drop_yard'] = chassis_activity_for_node.get('drop_yard')
+                node_data['hook_yard'] = chassis_activity_for_node.get('hook_yard')
+
+            node_data, previous_node = get_chassis_event_for_nodes(
+                previous_node, node_data, self.YARDS, self.distance_unit, self.assumptions.get('TIME_TO_SWITCH_CHASSIS')
+            )
+
+            empty_miles = get_distance_between_locations_from_matrix(
+                previous_node['end_loc'], 
+                node_data['start_loc'],
+                self.LOCATION_DISTANCE_MATRIX
+            )
+            
+            event_times = get_event_times(
+                node_data=node_data,
+                _move=node_data['move'],
+                prev_completed_minute=previous_node['move_completed_minute'],
+                endTime=completion_time,
+                timezone=self.timezone,
+                proximity_to_node=empty_miles,
+                distance_unit=self.distance_unit,
+                time_to_switch_chassis=self.assumptions.get('TIME_TO_SWITCH_CHASSIS'),
+                plan_date=self.plan_date
+            )
+
+            _node_data = {
+                'start_move_minute': event_times[0]['minutes']['recommended_enroute'],
+                'move_completed_minute': completion_time,
+                'event_times': event_times,
+                'start_loc': node_data['start_loc'],
+                'end_loc': node_data['end_loc'],
+                'reference_number': node_data['reference_number'],
+                'move_index': node_data['move_index'],
+                'chassis_pick_event': node_data.get('chassis_pick_event'),
             }
-            
-        if not visited_nodes:
+
+            return {
+                'empty_miles': empty_miles,
+                'node_data': _node_data
+            }
+        except Exception as e:
+            print(f"Error in _process_node: {str(e)}")
             return None
-            
-        previous_node = visited_nodes[-1]
-
-        chassis_activity_for_node = self.CHASSIS_MATRIX[prev_node_id][node_id]
-        if chassis_activity_for_node.get('activity') != CHASSIS_ACTIVITIES["NO_ACTION"]:
-            node_data['chassis_activity'] = chassis_activity_for_node.get('activity')
-            node_data['drop_yard'] = chassis_activity_for_node.get('drop_yard')
-            node_data['hook_yard'] = chassis_activity_for_node.get('hook_yard')
-
-        node_data, previous_node = get_chassis_event_for_nodes(
-            previous_node, node_data, self.YARDS, self.distance_unit, self.assumptions.get('TIME_TO_SWITCH_CHASSIS')
-        )
-
-        empty_miles = get_distance_between_locations_from_matrix(
-            previous_node['end_loc'], 
-            node_data['start_loc'],
-            self.LOCATION_DISTANCE_MATRIX
-        )
-        
-        event_times = get_event_times(
-            node_data=node_data,
-            _move=node_data['move'],
-            prev_completed_minute=previous_node['move_completed_minute'],
-            endTime=completion_time,
-            timezone=self.timezone,
-            proximity_to_node=empty_miles,
-            distance_unit=self.distance_unit,
-            time_to_switch_chassis=self.assumptions.get('TIME_TO_SWITCH_CHASSIS'),
-            plan_date=self.plan_date
-        )
-
-        _node_data = {
-            'start_move_minute': event_times[0]['minutes']['recommended_enroute'],
-            'move_completed_minute': completion_time,
-            'event_times': event_times,
-            'start_loc': node_data['start_loc'],
-            'end_loc': node_data['end_loc'],
-            'reference_number': node_data['reference_number'],
-            'move_index': node_data['move_index'],
-            'chassis_pick_event': node_data.get('chassis_pick_event'),
-        }
-
-        return {
-            'empty_miles': empty_miles,
-            'node_data': _node_data
-        }
 
     def _create_route_summary(self, vehicle_id, visited_nodes, empty_miles, get_route_distance):
         """
         Create summary of route including timing, distance and schedule metrics.
         """
-        depot_location = visited_nodes.pop(0)
-        first_node = visited_nodes[0]
-        last_node = visited_nodes[-1]
-        
-        # Calculate schedule metrics
-        total_time = last_node['move_completed_minute'] - first_node['start_move_minute']
-        was_early_start = first_node['start_move_minute'] <= self.assumptions.get('PREFERRED_START_TIME')
-        start_time = show_time_from_minute_of_day(first_node['start_move_minute'])
+        try:
+            depot_location = visited_nodes.pop(0)
+            first_node = visited_nodes[0]
+            last_node = visited_nodes[-1]
+            
+            # Calculate schedule metrics
+            total_time = last_node['move_completed_minute'] - first_node['start_move_minute']
+            was_early_start = first_node['start_move_minute'] <= self.assumptions.get('PREFERRED_START_TIME')
+            start_time = show_time_from_minute_of_day(first_node['start_move_minute'])
 
-        return {
-            'Driver Name': self.VEHICLES[vehicle_id]['_id'],
-            'node': visited_nodes,
-            'empty_miles': empty_miles,
-            'empty_miles_d': get_route_distance(vehicle_id),
-            'total_hours': round(total_time / 60, 2),
-            'total_moves': len(visited_nodes),
-            'was_invoked_early': was_early_start,
-            'woke_up_at': start_time
-        }
+            return {
+                'Driver Name': self.VEHICLES[vehicle_id]['_id'],
+                'node': visited_nodes,
+                'empty_miles': empty_miles,
+                'empty_miles_d': get_route_distance(vehicle_id),
+                'total_hours': round(total_time / 60, 2),
+                'total_moves': len(visited_nodes),
+                'was_invoked_early': was_early_start,
+                'woke_up_at': start_time
+            }
+        except Exception as e:
+            print(f"Error in _create_route_summary: {str(e)}")
+            return None
     
     def optimize(self):
         """

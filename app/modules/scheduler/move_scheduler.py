@@ -31,7 +31,7 @@ from typing import List, Dict, Any, Tuple
 from datetime import datetime, timedelta
 
 from load_scheduler.getOptimalLoad import getOptimalLoad
-from app.modules.scheduler.constants import ACTIONABLE_PROFILE_TYPES
+from app.modules.scheduler.constants import ACTIONABLE_PROFILE_TYPES, VALID_EVENT_TYPES, DROP_EVENT_TYPES
 from app.modules.scheduler.sanity_check_service import check_optimal_move_plan
 from app.modules.optimizer.appointment_time import get_appointment_time, get_appointment_time_v3
 from app.modules.scheduler.utility import (
@@ -187,10 +187,18 @@ def map_optimal_move_plan_to_recommended_moves(
             if not len(moves):
                 continue
 
+            is_reposition_move = optimal_move['predicted_next_move'] == 'Reposition'
             actionable_profile_types = ACTIONABLE_PROFILE_TYPES.get(optimal_move['predicted_next_move'], [])
+
             current_move = next(
                 (move for move in moves 
-                if any(event.get('type') in actionable_profile_types for event in move)),
+                 if (not is_reposition_move and 
+                     any(event.get('type') in actionable_profile_types for event in move))
+                 or (is_reposition_move and 
+                     any(event.get('type') in actionable_profile_types and 
+                         event.get('prevType') == 'DELIVERLOAD' for event in move) and 
+                     not any(event.get('type') in VALID_EVENT_TYPES 
+                            for event in move))),
                 None
             )
 
@@ -224,6 +232,10 @@ def map_optimal_move_plan_to_recommended_moves(
                 # Default 1 hour appointment window
                 recommended_appointment_from = converted_plan_date.isoformat()
                 recommended_appointment_to = (converted_plan_date + timedelta(hours=1)).isoformat()
+
+                if is_reposition_move:
+                    actual_appointment_from = datetime.fromisoformat(recommended_appointment_from).astimezone(pytz.UTC).isoformat()
+                    actual_appointment_to = (datetime.fromisoformat(recommended_appointment_from) + timedelta(days=1)).astimezone(pytz.UTC).isoformat()
                 
                 if actual_appointment_from:
                     # Convert actual appointment times to carrier timezone while preserving exact time
@@ -373,7 +385,7 @@ async def plan_loads_with_appointments_to_scheduler(
         for load in loads_with_appointments:
             # Extract events and moves
             driver_order = load.get('driverOrder', [])
-            events = {event.get('type'): event for event in driver_order if event.get('type') in actions.values()}
+            events = {event.get('type'): event for event in driver_order if event.get('type') in actions.values() and isinstance(event, dict)}
 
             moves = get_moves_from_driver_order(driver_order, {'exclude_void_out': True, 'exclude_combined_move': True})
 
@@ -384,19 +396,22 @@ async def plan_loads_with_appointments_to_scheduler(
                     if event_type in actions.values():
                         move_type = next(k for k,v in actions.items() if v == event_type)
                         move_positions[move_type] = i
+                
+                is_reposition_move = all(event.get('type') not in actions.values() for event in move) and \
+                    any(event.get('type') in DROP_EVENT_TYPES and event.get('prevType') == 'DELIVERLOAD' and not event.get('departed') for event in move)
+                if is_reposition_move:
+                    load['has_reposition_move'] = True
 
             # Get recommended times in one pass
             recommended_times = {}
             planning_date = planning_week_dates[0]
 
             for move_type in actions:
-                from_time = load.get(f'{move_type}FromTime')
-                to_time = load.get(f'{move_type}ToTime')
+                from_time = datetime.fromisoformat(load.get(f'{move_type}FromTime')).astimezone(tz) if load.get(f'{move_type}FromTime') else None
+                to_time = datetime.fromisoformat(load.get(f'{move_type}ToTime')).astimezone(tz) if load.get(f'{move_type}ToTime') else None
 
                 # if difference between from and to time is more than 1 day
                 if from_time and to_time:
-                    from_time = datetime.fromisoformat(from_time).astimezone(tz)
-                    to_time = datetime.fromisoformat(to_time).astimezone(tz)
                     if (to_time - from_time).days > 1 and planning_date < to_time:
                         # from time is from time or planning date whichever is greater
                         from_time = max(from_time, planning_date)
@@ -408,10 +423,12 @@ async def plan_loads_with_appointments_to_scheduler(
                 return_time = datetime.fromisoformat(recommended_times['return'])
                 
                 if move_positions.get('delivery') == move_positions.get('return'):
-                    loading_time = waiting_times_dict.get((events['DELIVERLOAD'].get('customerId', ''), 'DELIVERLOAD', False), { 'waiting_time': 30 })
+                    # Ensure customerId is hashable (convert to string if needed)
+                    customer_id = str(events['DELIVERLOAD'].get('customerId', '')) if events['DELIVERLOAD'].get('customerId') is not None else ''
+                    loading_time = waiting_times_dict.get((customer_id, 'DELIVERLOAD', False), { 'waiting_time': 30 })
                     duration = calculate_duration_from_routing_events(events, 'DELIVERLOAD', 'RETURNCONTAINER', distance_unit, loading_time.get('waiting_time'))
 
-                    delivery_office_hours = next((office_hour for office_hour in location_office_hours if office_hour['_id'] == events['DELIVERLOAD'].get('customerId', '')), None)
+                    delivery_office_hours = next((office_hour for office_hour in location_office_hours if office_hour['_id'] == customer_id), None)
                     recommended_times['delivery'] = get_relative_appointment_time(recommended_times['return'], delivery_office_hours, duration, tz)
                 else:
                     recommended_times['delivery'] = (return_time - timedelta(days=1)).isoformat()
@@ -421,10 +438,12 @@ async def plan_loads_with_appointments_to_scheduler(
                 delivery_time = datetime.fromisoformat(recommended_times['delivery'])
                 
                 if move_positions.get('pickup') == move_positions.get('delivery'):
-                    loading_time = waiting_times_dict.get((events['PULLCONTAINER'].get('customerId', ''), 'PULLCONTAINER', False), { 'waiting_time': 30 })
+                    # Ensure customerId is hashable (convert to string if needed)
+                    customer_id = str(events['PULLCONTAINER'].get('customerId', '')) if events['PULLCONTAINER'].get('customerId') is not None else ''
+                    loading_time = waiting_times_dict.get((customer_id, 'PULLCONTAINER', False), { 'waiting_time': 30 })
                     duration = calculate_duration_from_routing_events(events, 'PULLCONTAINER', 'DELIVERLOAD', distance_unit, loading_time.get('waiting_time'))
 
-                    pickup_office_hours = next((office_hour for office_hour in location_office_hours if office_hour['_id'] == events['PULLCONTAINER'].get('customerId', '')), None)
+                    pickup_office_hours = next((office_hour for office_hour in location_office_hours if office_hour['_id'] == customer_id), None)
                     recommended_times['pickup'] = get_relative_appointment_time(recommended_times['delivery'], pickup_office_hours, duration, tz)
                 else:
                     recommended_times['pickup'] = (delivery_time - timedelta(days=1)).isoformat()
@@ -450,6 +469,24 @@ async def plan_loads_with_appointments_to_scheduler(
             if not recommended_times.get('pickup') and not "delivery" in move_positions and not recommended_times.get('return') and "return" in move_positions:
                 if ("pickup" in move_positions and move_positions.get('return') == move_positions.get('pickup')) or not "pickup" in move_positions:
                     recommended_times['return'] = planning_week_dates[0].isoformat()
+            
+            # this is for reposition move
+            if load.get('has_reposition_move') and recommended_times.get('delivery'):
+                drop_date = max(
+                    planning_week_dates[0],
+                    datetime.fromisoformat(recommended_times['delivery']) + timedelta(days=1)
+                ).isoformat()
+
+                if datetime.fromisoformat(drop_date) < planning_week_dates[-1] + timedelta(days=1):
+                    optimal_plan_for_scheduled_moves.append({
+                        'reference_number': load.get('reference_number'),
+                        'current_load_type': 'scheduled',
+                        'predicted_next_move': 'Reposition',
+                        'plan_date': datetime.fromisoformat(drop_date).astimezone(tz).strftime('%Y-%m-%d')
+                    })
+                    assumed_return_date = datetime.fromisoformat(drop_date) + timedelta(days=1)
+                    if recommended_times.get('return') and assumed_return_date > datetime.fromisoformat(recommended_times['return']):
+                        recommended_times['return'] = assumed_return_date.isoformat()
 
             last_action_date = None
             for move_type in actions.keys():
@@ -738,11 +775,17 @@ async def predict_next_move(user_payload: Dict[str, Any], plan_date: str, option
 def load_update_action_validate(old_load: Dict[str, Any], load: Dict[str, Any]) -> Tuple[bool, str, str, str]:
     try:
         # check if pickup appointment is updated
-        if old_load.get('pickupTimes', [{}])[0].get('pickupFromTime') != load.get('pickupTimes', [{}])[0].get('pickupFromTime'):
+        old_pickup_times = old_load.get('pickupTimes', [])
+        new_pickup_times = load.get('pickupTimes', [])
+        if (old_pickup_times and new_pickup_times and 
+            old_pickup_times[0].get('pickupFromTime') != new_pickup_times[0].get('pickupFromTime')):
             return True, 'pickup_appt'
         
         # check if delivery appointment is updated
-        if old_load.get('deliveryTimes', [{}])[0].get('deliveryFromTime') != load.get('deliveryTimes', [{}])[0].get('deliveryFromTime'):
+        old_delivery_times = old_load.get('deliveryTimes', [])
+        new_delivery_times = load.get('deliveryTimes', [])
+        if (old_delivery_times and new_delivery_times and 
+            old_delivery_times[0].get('deliveryFromTime') != new_delivery_times[0].get('deliveryFromTime')):
             return True, 'delivery_appt'
         
         # check if any other related fields are updated
@@ -768,8 +811,7 @@ def load_update_action_validate(old_load: Dict[str, Any], load: Dict[str, Any]) 
         
         return False, None
     except Exception as e:
-        logger.error(e)
-        raise Exception(f"Failed to validate load update action: {str(e)}")
+        return False, None
 
 ## Replan Modified Move
 def is_valid_action_for_replan(action: str, old_load: Dict[str, Any], load: Dict[str, Any]) -> bool:

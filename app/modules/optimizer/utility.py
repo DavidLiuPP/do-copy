@@ -328,6 +328,7 @@ def populate_appointment_times_to_events(
     try:
         timeZone = user_payload.get('timeZone')
         tz = pytz.timezone(timeZone)
+        base_date = converted_plan_date
 
         time_map = {
             'PULLCONTAINER': ('pickupFromTime', 'pickupToTime'),
@@ -360,18 +361,22 @@ def populate_appointment_times_to_events(
         
         for index, event in enumerate(actionable_move):
             # Handle midnight start time
-            appt_from = event.get('appointment_from', None) and datetime.fromisoformat(event['appointment_from'])
-            appt_to = event.get('appointment_to', None) and datetime.fromisoformat(event['appointment_to'])
-            is_midnight_start = appt_from and appt_from.astimezone(tz).hour == 0
-            is_midnight_end = appt_to and appt_to.astimezone(tz).hour <= 1
+            appt_from = event.get('appointment_from', None) and datetime.fromisoformat(event['appointment_from']).astimezone(tz)
+            appt_to = event.get('appointment_to', None) and datetime.fromisoformat(event['appointment_to']).astimezone(tz)
+            is_midnight_start = appt_from and appt_from.hour == 0
+            is_midnight_end = appt_to and appt_to.hour <= 1
             office_hours = next((office_hour for office_hour in location_office_hours if office_hour['_id'] == event.get('customerId', '')), None)
             
             if ((is_midnight_start and is_midnight_end) or not event.get('is_scheduled')):
                 office_start_time = DEFAULT_OFFICE_START if office_hours is None else office_hours.get('office_hours_start', DEFAULT_OFFICE_START)
                 office_end_time = DEFAULT_OFFICE_END if office_hours is None else office_hours.get('office_hours_end', DEFAULT_OFFICE_END)
-                
-                appointment_from = converted_plan_date.replace(hour=office_start_time.hour, minute=office_start_time.minute)
-                appointment_to = converted_plan_date.replace(hour=office_end_time.hour, minute=office_end_time.minute)
+
+                effective_base_date = base_date
+                if appt_to and appt_to > base_date:
+                    effective_base_date = appt_to
+
+                appointment_from = effective_base_date.replace(hour=office_start_time.hour, minute=office_start_time.minute)
+                appointment_to =  effective_base_date.replace(hour=office_end_time.hour, minute=office_end_time.minute)
 
                 if appointment_to <= appointment_from:
                     appointment_to = appointment_to + timedelta(days=1)
@@ -410,6 +415,8 @@ def populate_appointment_times_to_events(
                 event.get('customerId') != actionable_move[index + 1].get('customerId')
             ):
                 event['is_liveunload'] = True
+            
+            base_date = event.get('appointment_to', None) and datetime.fromisoformat(event['appointment_to']).astimezone(tz)
 
         return actionable_move
         

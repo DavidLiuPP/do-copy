@@ -6,10 +6,12 @@ from geopy.distance import geodesic
 from copy import deepcopy
 from vrp_optimizer.assumptions import CHASSIS_ACTIVITIES
 from app.modules.optimizer.constants import DISTANCE_MULTIPLIER, CHASSIS_YARD_CONFIGS
+from bson import ObjectId
     
 from vrp_optimizer.routing_distance import (
     get_distance_between_locations_from_matrix
 )
+from app.mongo_services.mongo_service import get_customers
 
 @lru_cache(maxsize=1024)
 def calculate_distance(lat1, lng1, lat2, lng2, unit = 'mi'):
@@ -124,6 +126,29 @@ def get_yard_data(yard_locations):
             'locations': [],
             '_id': 'Yard'
         }
+
+
+async def get_yard_datas_from_customer_ids(customer_ids: List[str]):
+    customers = await get_customers({"_id": {"$in": [ObjectId(customer_id) for customer_id in customer_ids]}})
+
+    return [{
+        'start_loc': [ customer.get('address', {}).get('lat', 0), customer.get('address', {}).get('lng', 0) ],
+        'end_loc': [ customer.get('address', {}).get('lat', 0), customer.get('address', {}).get('lng', 0) ],
+        'depot_customer_id': str(customer.get('_id')),
+        'is_manual_location': False,
+        'hash_key': f"{customer.get('address', {}).get('lat', 0)}-{customer.get('address', {}).get('lng', 0)}-{customer.get('_id')}",
+        'company_name': customer.get('company_name'),
+        'yard_id': str(customer.get('_id')),
+        'is_chassis_pick_allowed': True,
+        'is_chassis_termination_allowed': True,
+        'route_distance': 0,
+        'total_waiting_time': 0,
+        'minutes_on_road': 0,
+        'early_arrival_waiting': 0,
+        'locations': [],
+        '_id': 'Yard'
+    } for customer in customers]
+
 
 
 def get_yard_data_for_driver(driver):
@@ -445,3 +470,76 @@ def get_warehouse_visits(moves: List[dict], yards: List[dict]) -> List[dict]:
     hook_events = [e for e in moves if e.get('type') == 'HOOKCONTAINER' and e.get('customerId') not in yards]
 
     return delivery_events + hook_events
+
+
+def is_move_empty(type_of_load: str, driver_order: list, move_id: str) -> bool:
+    """
+    Check if a move is empty based on the type of load and driver order.
+    
+    Args:
+        type_of_load (str): Type of load ('IMPORT' or 'EXPORT')
+        driver_order (list): List of driver order events
+        move_id (str): ID of the move to check
+        
+    Returns:
+        bool: True if the move is empty, False otherwise
+    """
+
+    # Validate load type
+    if type_of_load not in ['IMPORT', 'EXPORT']:
+        return False
+    
+    # Filter out voided orders
+    valid_driver_order = [order for order in driver_order if not order.get('isVoidOut')]
+    
+    # Find move start and end indices
+    move_starts_at_index = -1
+    
+    for i, order in enumerate(valid_driver_order):
+        if str(order.get('moveId', '')) == str(move_id):
+            move_starts_at_index = i
+            break
+
+    # Find the last delivery index
+    last_delivery_index = -1
+    for i in range(len(valid_driver_order) - 1, -1, -1):
+        if valid_driver_order[i].get('type') == 'DELIVERLOAD':
+            last_delivery_index = i
+            break
+    
+    # If there is no delivery in the routing then current move is not empty
+    if last_delivery_index == -1:
+        return False
+    
+    # Return result based on load type
+    # If the delivery was done before current move and load type is IMPORT then current move is empty
+    if last_delivery_index < move_starts_at_index and type_of_load == 'IMPORT':
+        return True
+    
+    # If the delivery was done after current move and load type is EXPORT then current move is not empty
+    if last_delivery_index > move_starts_at_index and type_of_load == 'EXPORT':
+        return True
+    
+    # If the delivery is not done yet then current move is not empty
+    return False
+
+def is_move_empty_with_constraint(is_empty_move: bool, constraint_type: str) -> bool:
+    constraint_includes = [
+        'hazmat',      
+        'over_height',  
+        'waste',       
+        'bonded',    
+        'overweight',
+        'liquor',    
+        'genset',    
+        'gdp',       
+        'oog'        
+    ]
+
+    if not is_empty_move:
+        return False
+
+    if constraint_type in constraint_includes and is_empty_move:
+        return True
+    
+    return False

@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import date, timedelta
 from typing import Any, Dict, List, Union
 from bson import json_util
 
@@ -69,3 +70,15 @@ def extract_user_id(carrier_data):
     elif isinstance(carrier_data, str):
         return carrier_data
     return None
+
+
+def get_business_days_between(start_date: date, end_date: date) -> int:
+    """Calculate number of business days between two dates, excluding weekends"""
+    days = 0
+    current = start_date
+    while current <= end_date:
+        # Monday = 0, Sunday = 6
+        if current.weekday() < 5:  # Less than 5 means Mon-Fri
+            days += 1
+        current += timedelta(days=1)
+    return days

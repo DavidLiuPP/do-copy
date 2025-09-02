@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from app.firebase_connection import get_firebase_client
 from app.modules.scheduler.constants import REQUIRED_LOAD_FIELDS, OPTIONAL_LOAD_FIELDS, APPOINTMENT_STATUS
 from app.utils.distance_calc import calculate_distance_between_locations, calculate_duration_from_distance
+from app.utils.common_utils import get_business_days_between
 
 # logger
 logger = logging.getLogger(__name__)
@@ -152,6 +153,20 @@ def map_loads_for_scheduler(loads: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                 # if lastFreeDay is not present, derive it from vessel eta
                 if not load_copy.get('lastFreeDay') and load_copy.get('vessel') and not load_copy.get('pickupFromTime') and not load_copy.get('deliveryFromTime'):
                     load_copy['lastFreeDay'] = (datetime.fromisoformat(load_copy['vessel']) + timedelta(days=7)).isoformat()
+
+            # Get current date once
+            current_date = datetime.now().date()
+
+            # Check risks within 2 business days
+            if load_copy.get('lastFreeDay'):
+                last_free_day = datetime.fromisoformat(load_copy['lastFreeDay']).date()
+                if get_business_days_between(current_date, last_free_day) <= 3:
+                    load_copy['at_risk_of_demurrage'] = True
+
+            if load_copy.get('freeReturnDate'): 
+                empty_day = datetime.fromisoformat(load_copy['freeReturnDate']).date()
+                if get_business_days_between(current_date, empty_day) <= 3:
+                    load_copy['at_risk_of_perdiem'] = True
 
             transformed_loads.append(load_copy)
             

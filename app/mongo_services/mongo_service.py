@@ -141,6 +141,26 @@ async def get_orders_collection() -> AsyncIOMotorCollection:
     except Exception as e:
         logger.error(f"Error accessing orders collection: {str(e)}")
         raise Exception(f"Failed to access orders collection: {str(e)}")
+    
+
+async def get_customers(query, projection = {}):
+    try:
+        db = await get_mongo_db()
+        if db is None:
+            raise ConnectionError("Failed to get database connection")
+            
+        cursor = db.customers.find(query, projection)
+
+        # Convert cursor to list
+        customers = await cursor.to_list()
+        return customers
+    
+    except ConnectionError as e:
+        logger.error(f"Database connection error: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Error accessing customers collection: {str(e)}")
+        raise Exception(f"Failed to access customers collection: {str(e)}")
 
 
 async def get_token(carrier: str) -> str:

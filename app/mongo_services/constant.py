@@ -158,5 +158,6 @@ LOAD_PROJECTION_FOR_OPTIMIZER = {
     "isGenset": 1,
     "readyToReturnDate": 1,
     "loadStatus": 1,
-    "caller": 1
+    "caller": 1,
+    "chassisType": 1,
 }

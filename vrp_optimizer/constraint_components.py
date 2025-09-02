@@ -1,6 +1,8 @@
 import logging
 from typing import Any, Dict, List
 
+from vrp_optimizer.helpers import is_move_empty_with_constraint
+
 logger = logging.getLogger(__name__)
 
 # Dynamic constraint definitions
@@ -49,19 +51,19 @@ CONSTRAINT_RULES: List[Dict[str, Any]] = [
     }, 
     {
         'constraint_name': 'genset',
-        'node_field': 'isgenset',
+        'node_field': 'isGenset',
         'operator': 'REQUIRES_IF_TRUE',
         'vehicle_field': 'genset',
     },    
     {
-        'constraint_name': 'demestic',
-        'node_field': 'demestic',
+        'constraint_name': 'domestic',
+        'node_field': 'domestic',
         'operator': 'REQUIRES_IF_TRUE',
-        'vehicle_field': 'demestic',
+        'vehicle_field': 'domestic',
     },    
     {
         'constraint_name': 'over_height',
-        'node_field': 'over_height',
+        'node_field': 'overHeight',
         'operator': 'REQUIRES_IF_TRUE',
         'vehicle_field': 'over_height',
     },   
@@ -73,7 +75,7 @@ CONSTRAINT_RULES: List[Dict[str, Any]] = [
     },
     {
         'constraint_name': 'overweight',
-        'node_field': 'overweight',
+        'node_field': 'overWeight',
         'operator': 'REQUIRES_IF_TRUE',
         'vehicle_field': 'overweight',
     },
@@ -109,7 +111,7 @@ CONSTRAINT_RULES: List[Dict[str, Any]] = [
     },
     {
         'constraint_name': 'restricted_locations',
-        'node_field': 'locations',
+        'node_field': 'customer_ids',
         'operator': 'NOT_IN',
         'vehicle_field': 'restricted_locations',
     },
@@ -124,7 +126,50 @@ CONSTRAINT_RULES: List[Dict[str, Any]] = [
         'node_field': 'preferred_states',
         'operator': 'SUBSET_OF',
         'vehicle_field': 'preferred_states',
-    }
+    },
+    {
+        'constraint_name': 'preferred_types_of_load',
+        'node_field': 'type_of_load',
+        'operator': 'IN',
+        'vehicle_field': 'preferred_types_of_load',
+    },
+    {
+        'constraint_name': 'preferred_move_types',
+        'node_field': 'event_types',
+        'operator': 'SUBSET_OF',
+        'vehicle_field': 'preferred_move_types',
+    },
+    {
+        'constraint_name': 'preferred_chassis_types',
+        'node_field': 'chassisType',
+        'operator': 'IN',
+        'vehicle_field': 'preferred_chassis_types',
+    },
+    {
+        'constraint_name': 'highway',
+        'node_field': 'is_highway',
+        'operator': 'REQUIRES_IF_TRUE',
+        'vehicle_field': 'highway',
+    },
+    {
+        'constraint_name': 'local',
+        'node_field': 'is_local',
+        'operator': 'REQUIRES_IF_TRUE',
+        'vehicle_field': 'local',
+    },
+    {
+        'constraint_name': 'domestic',
+        'node_field': 'domestic',
+        'operator': 'REQUIRES_IF_TRUE',
+        'vehicle_field': 'domestic',
+    },
+    {
+        'constraint_name': 'street_turn',
+        'node_field': 'isStreetTurn',
+        'operator': 'REQUIRES_IF_TRUE',
+        'vehicle_field': 'street_turn',
+    },
+    
 ]
 
 def operator_fn(operator: str, left_val, right_val) -> bool:
@@ -184,7 +229,7 @@ def operator_fn(operator: str, left_val, right_val) -> bool:
         left_set = set(left_val) if isinstance(left_val, (list, set)) else {left_val}
         right_set = set(right_val) if isinstance(right_val, (list, set)) else {right_val}
         return bool(left_set.issubset(right_set))
-
+    
     raise ValueError(f"Unsupported operator: {operator}")
 
 
@@ -194,15 +239,28 @@ def is_vehicle_compatible_with_node(vehicle: dict, node: dict) -> bool:
         try:
             left_val = node.get(rule['node_field'])
             right_val = vehicle.get(rule['vehicle_field'])
+            is_empty_move = node.get('is_empty_move')
+            constraint_name = rule.get('constraint_name')
 
-            if left_val in [None, '', [], {}] or right_val in [None, '', [], {}]:
+            if left_val in [None, '', [], {}] or right_val in [None, '', [], {}] or is_move_empty_with_constraint(is_empty_move, constraint_name):
                 continue
+            
+            if(constraint_name == 'overweight' and vehicle.get('ower_weight_states')):
+                driver_overweight_locations = vehicle.get('ower_weight_states', [])
+                consignee_state = node.get('over_weight_state', '')
+                
+                if not driver_overweight_locations:
+                    return False, rule['constraint_name']
+                
+                if consignee_state and operator_fn(rule['operator'], left_val, right_val):
+                    if consignee_state not in [str(loc) for loc in driver_overweight_locations]:
+                        return False, rule['constraint_name']
 
             if not operator_fn(rule['operator'], left_val, right_val):
                 return False, rule['constraint_name']
 
         except Exception as e:
-            logger.error(f"Error evaluating constraint '{rule['constraint_name']}': {str(e)}")
+            logger.error(f"Error evaluating constraint '{constraint_name}': {str(e)}")
             return True, None
 
     return True, None

@@ -17,34 +17,37 @@ DEFAULT_YARD_LOCATION_PREFIX_MULTIPLE = "default_yard_location_multiple"
 
 SETTINGS_TTL = 1 * 60 * 60  # 1 hour in seconds
 
-async def set_carrier_settings(carrier_id: str) -> bool:
+async def set_carrier_settings(carrier_id: str) -> Optional[Dict[str, Any]]:
     """
     Store carrier settings in Redis with TTL.
 
     Args:
         carrier_id: Unique identifier for the carrier
-        settings: Dictionary containing carrier settings
 
     Returns:
-        bool: True if successful, False otherwise
+        Optional[Dict[str, Any]]: Carrier settings if successful, None if not found, False if error
     """
     try:
         redis_key = f"{CARRIER_SETTINGS_PREFIX}:{carrier_id}"
 
         setting_collection = await get_setting_collection()
 
-        settings = await setting_collection.find_one({"carrier": ObjectId(carrier_id)}, {"carrier": 1, "isDispatchAutomationEnabled": 1, "shiftTimes": 1})
+        settings = await setting_collection.find_one({"carrier": ObjectId(carrier_id)})
+
+        if not settings:
+            logger.warning(f"No carrier settings found in database for carrier_id: {carrier_id}")
+            return None
 
         # Convert cursor to list
         settings_json = flatten_bson(settings)
 
-        settings_json = json.dumps(settings_json)
+        settings_json_str = json.dumps(settings_json)
         
         # Store in Redis with TTL
         if redis_client:
-            await redis_client.set(redis_key, settings_json, ex=SETTINGS_TTL)
+            await redis_client.set(redis_key, settings_json_str, ex=SETTINGS_TTL)
 
-        return settings
+        return settings_json
 
     except Exception as e:
         logger.error(f"Error setting carrier settings in Redis: {str(e)}")
@@ -61,16 +64,37 @@ async def get_carrier_settings(carrier_id: str) -> Optional[Dict[str, Any]]:
         Optional[Dict[str, Any]]: Carrier settings if found, None otherwise
     """
     try:
-
-        if redis_client:
-            redis_key = f"{CARRIER_SETTINGS_PREFIX}:{carrier_id}"
-            settings_json = await redis_client.get(redis_key)
+        if not redis_client:
+            settings_json = await set_carrier_settings(carrier_id)
             
-            if settings_json:
-                settings_json = json.loads(settings_json)
-                return settings_json
+            # Handle case where set_carrier_settings returns False (error case) or None (not found)
+            if settings_json is False:
+                logger.error(f"Failed to set carrier settings for carrier_id: {carrier_id}")
+                return None
+            elif settings_json is None:
+                logger.warning(f"No carrier settings found for carrier_id: {carrier_id}")
+                return None
+                
+            return settings_json
+
+        redis_key = f"{CARRIER_SETTINGS_PREFIX}:{carrier_id}"
+        settings_json = await redis_client.get(redis_key)
         
+        if settings_json:
+            settings_json = json.loads(settings_json)
+            return settings_json
+        
+        # If not found in Redis, fetch from database
+        logger.info(f"Carrier settings not found in Redis for carrier_id: {carrier_id}, fetching from database")
         settings_json = await set_carrier_settings(carrier_id)
+        
+        # Handle case where set_carrier_settings returns False (error case) or None (not found)
+        if settings_json is False:
+            logger.error(f"Failed to set carrier settings for carrier_id: {carrier_id}")
+            return None
+        elif settings_json is None:
+            logger.warning(f"No carrier settings found for carrier_id: {carrier_id}")
+            return None
             
         return settings_json
     
@@ -161,7 +185,7 @@ async def get_default_yard_location(carrier_id: str, get_from_db: bool = False) 
         return None
     except Exception as e:
         logger.error(f"Error getting default yard location from Redis: {str(e)}")
-        raise ConnectionError(f"Error getting default yard location from Redis: {str(e)}")
+        return None
     
 
 
@@ -171,10 +195,21 @@ async def get_shift_times(carrier: str) -> Dict[str, Any]:
     """
     try:
         carrier_settings = await get_carrier_settings(carrier)
+        
+        # Handle case where carrier_settings is None or False
+        if not carrier_settings:
+            logger.warning(f"No carrier settings found for carrier: {carrier}")
+            return []
+        
         shift_times = carrier_settings.get('shiftTimes', [])
+        isShiftEnabled = carrier_settings.get('isShiftEnabled', False)
+
+        if not isShiftEnabled:
+            shift_times = []
+
         shift_times = [dict(s) for s in shift_times if s.get('isEnabled')]
         
         return shift_times
     except Exception as e:
         logger.error(f"Error getting shift times from Redis: {str(e)}")
-        raise ConnectionError(f"Error getting shift times from Redis: {str(e)}")
+        return []

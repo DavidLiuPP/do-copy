@@ -26,6 +26,7 @@ from app.modules.optimizer.constants import (
     PLANNING_ASSUMPTIONS,
     LATE_ARRIVAL_MINUTES
 )
+from app.modules.optimizer.in_day_service import get_schedule_info_from_driver_schedules, update_actionable_moves_for_inday_plan
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,9 @@ async def get_optimal_plan_v3(
     time_limit: int = 3 * 60,
     branch: Any = None,
     shift: Any = None,
+    behind_schedule_moves: List[Dict[str, Any]] = [],
+    is_in_day_plan: bool = False,
+    driver_schedules: List[Dict[str, Any]] = [],
     allow_late_arrivals: bool = False,
     invalid_moves: List[Dict[str, Any]] = []
 ):
@@ -98,6 +102,7 @@ async def get_optimal_plan_v3(
 
         # map driver data to vehicle data
         vehicle_data = []
+        max_vehicle_end_minute = 0
         for v in drivers:
             if not v.get('depot_customer_id'):
                 continue
@@ -112,7 +117,6 @@ async def get_optimal_plan_v3(
             if end_minute < start_minute:
                 end_minute += ONE_DAY_IN_MINUTES
 
-            end_minute = min(end_minute, plan_end_minute)
             start_minute = max(start_minute, plan_start_minute)
 
             skip_driver_for_optimizer = False
@@ -125,6 +129,8 @@ async def get_optimal_plan_v3(
                 end_minute = plan_end_minute
 
                 skip_driver_for_optimizer = True
+
+            max_vehicle_end_minute = max(max_vehicle_end_minute, end_minute)
 
             data = {
                 **v,
@@ -146,6 +152,11 @@ async def get_optimal_plan_v3(
                 data['skip_driver_for_optimizer'] = True
 
             vehicle_data.append(data)
+        
+        max_time_dimension_minutes = max(plan_end_minute, max_vehicle_end_minute)
+
+        if is_in_day_plan:
+            actionable_moves = update_actionable_moves_for_inday_plan(actionable_moves, behind_schedule_moves)
 
         assigned_moves = [m for m in actionable_moves if m.get('is_manually_planned', False)]
         actionable_moves = [m for m in actionable_moves if not m.get('is_manually_planned', False)]
@@ -154,14 +165,20 @@ async def get_optimal_plan_v3(
 
         driver_default_locations = get_all_driver_default_locations(drivers)
 
-        vehicle_data, assigned_moves, additional_depot_locations, fixed_plan = handle_assigned_moves(
-            user_payload,
-            vehicle_data,
-            driver_default_locations,
-            additional_depot_locations,
-            all_assigned_moves,
-            plan_date=converted_plan_date
-        )
+        fixed_plan = {}
+        if is_in_day_plan:
+            assigned_moves = []
+            vehicle_data, additional_depot_locations = await get_schedule_info_from_driver_schedules(vehicle_data, additional_depot_locations, driver_schedules)
+
+        else:
+            vehicle_data, assigned_moves, additional_depot_locations, fixed_plan = handle_assigned_moves(
+                user_payload,
+                vehicle_data,
+                driver_default_locations,
+                additional_depot_locations,
+                all_assigned_moves,
+                plan_date=converted_plan_date
+            )
 
         
         ALL_DEPOT_LOCATIONS = driver_default_locations + additional_depot_locations
@@ -237,7 +254,9 @@ async def get_optimal_plan_v3(
                         "location_distance_matrix": location_distance_matrix,
                         "plan_start_minute": plan_start_minute,
                         "plan_end_minute": plan_end_minute,
-                        "carrier_id": user_payload.get('carrier')
+                        "carrier_id": user_payload.get('carrier'),
+                        "plan_date": converted_plan_date,
+                        "max_time_dimension_minutes": max_time_dimension_minutes
                     }
 
                     optimizer = Optimizer(
@@ -254,7 +273,8 @@ async def get_optimal_plan_v3(
                         plan_end_minute = plan_end_minute,
                         carrier_id = user_payload.get('carrier'),
                         allow_late_arrivals_upto_n_minutes = allow_late_arrivals_upto_n_minutes,
-                        plan_date = converted_plan_date
+                        plan_date = converted_plan_date,
+                        max_time_dimension_minutes = max_time_dimension_minutes
                     )
                     
                     _optimal_plan, _d_schedule = pool.apply_async(optimizer.optimize).get(timeout=time_limit + 30)
@@ -276,7 +296,8 @@ async def get_optimal_plan_v3(
 
         # Return the current assignements as new plan if no new optimal plan is found
         if not optimal_plan:
-            if not all_assigned_moves:
+            
+            if is_in_day_plan or not all_assigned_moves:
                 return {
                     'optimal_plan': [],
                     'invalid_moves': invalid_moves,
@@ -297,6 +318,14 @@ async def get_optimal_plan_v3(
             m['is_new_move'] = True
 
         optimal_plan = map_route_summary_to_driver_plan(assigned_moves + actionable_moves, optimal_plan, drivers, timeZone, converted_plan_date)
+
+        if is_in_day_plan:
+            return {
+            'optimal_plan': optimal_plan,
+            'invalid_moves': invalid_moves,
+            'driver_schedule': driver_schedule,
+            'optimizer_input': optimizer_input
+        }
 
         formatted_fixed_plan = map_fixed_plan_to_driver_plan(fixed_plan, drivers, timeZone, converted_plan_date, distance_unit)
 
@@ -364,7 +393,7 @@ async def map_actionable_moves_for_optimizer(
             for event in move.get('move'):
                 if appointment:
                     # Add travel time to existing appointment window
-                    minute_to_reach = minute_from_distance(event.get('distance', 0), distance_unit)
+                    minute_to_reach = event.get('travel_time', 0) if event.get('travel_time') is not None else minute_from_distance(event.get('distance', 0), distance_unit)
                     appointment[0] += minute_to_reach
                     appointment[1] += minute_to_reach
                 
@@ -422,7 +451,12 @@ async def map_actionable_moves_for_optimizer(
                             event['early_arrival_waiting'] = additional_waiting_time
                             early_arrival_waiting += additional_waiting_time
 
+
                         appointment[0] = max(appointment[0], event_appt_from)
+                        
+                        if appointment[0] > event_appt_to:
+                            # If driver is going to be late than instead of "to window" of appt, take current max arrival time.
+                            event_appt_to = appointment[1]
                         appointment[1] = min(appointment[0] + appointment_diff, event_appt_to)
                     else:
                         # Initialize first appointment window
@@ -469,6 +503,8 @@ async def map_actionable_moves_for_optimizer(
                 "total_waiting_time": move.get('waiting_time'),
                 "expected_from_minute": int(expected_from_minute),
                 "expected_to_minute": int(expected_to_minute),
+                'is_highway': move.get('routeType') == 'Highway',
+                'is_local': move.get('routeType') == 'Local',
             }
 
             if move.get('is_assigned_move', False):
@@ -479,13 +515,33 @@ async def map_actionable_moves_for_optimizer(
             if warehouse_visits:
                 move_data['warehouse_ids'] = list(filter(None, [e.get('customerId') for e in warehouse_visits]))
             
+            if move.get('suggested_driver', None) or move.get('assigned_driver', None):
+                move_data['suggested_driver'] = move.get('assigned_driver', move.get('suggested_driver', ''))
+
             if move.get('is_free_flow_move', False):
                 move_data['last_move_by_driver'] = True
+                move_data['is_free_flow_move'] = True
 
             if len(last_visit_locations) > 0:
                 is_last_visit_location_present = any(m for m in move.get('move', []) if m.get('customerId') and m.get('customerId') in last_visit_locations)
                 if is_last_visit_location_present:
                     move_data['last_move_by_driver'] = True
+
+            if move.get('move', []):
+                load_moves = move.get('move', [])
+                event_types = [event.get('type') for event in load_moves if event.get('type')]
+                customer_ids = [event.get('customerId') for event in load_moves if event.get('customerId')]
+                # First try DELIVERLOAD events
+                over_weight_state = [f"{event.get('state').upper()}, {event.get('country').upper()}" for event in load_moves if event.get('type') == 'DELIVERLOAD' and event.get('state') and event.get('country')]
+                
+                # If DELIVERLOAD not present, fallback to PICKUP or RETURN events
+                if not over_weight_state:
+                    over_weight_state = [f"{event.get('state').upper()}, {event.get('country').upper()}" for event in load_moves if event.get('type') in ['PULLCONTAINER', 'RETURNCONTAINER'] and event.get('state') and event.get('country')]
+                
+                move_data['over_weight_state'] = over_weight_state[0] if over_weight_state else ''
+                move_data['customer_ids'] = customer_ids
+                move_data['event_types'] = event_types
+                move_data['preferred_states'] = [f"{event.get('state')}, {event.get('country')}" for event in load_moves if event.get('state') and event.get('country')]
 
             if move_data.get('expected_from_minute') > move_data.get('expected_to_minute'):
                 copied_move = move.copy()
@@ -617,6 +673,7 @@ def map_route_summary_to_driver_plan(loads: List[Dict[str, Any]], optimal_plan: 
                     'revenue': load.get('revenue', 0),
                     'driver_pay': 0,
                     'is_modified_move': False if pd.isna(load.get('is_modified_move')) else bool(load.get('is_modified_move')),
+                    'modification_reason': load.get('modification_reason', ''),
                     'is_move_affected': is_move_affected,
                     'is_assigned_move': not is_new_move,
                     'is_new_move': is_new_move,
@@ -624,6 +681,7 @@ def map_route_summary_to_driver_plan(loads: List[Dict[str, Any]], optimal_plan: 
                     'chassis_pick_event': chassis_pick_event,
                     'chassis_termination_event': chassis_termination_event,
                     'is_free_flow_move': load.get('is_free_flow_move', False),
+                    'is_combined_trip': load.get('is_combined_trip', False),
                     'plan_assumptions': plan_assumptions
                 }
                 recommended_moves.append(mapped_assignment)
