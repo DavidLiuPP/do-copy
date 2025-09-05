@@ -28,6 +28,7 @@ from app.api.redis_router import router as redis_router
 from app.api.report_router import router as report_router
 from app.api.upload_router import router as upload_router
 from app.api.agent_router import router as agent_router
+from app.api.optimizer_plan_test_router import router as optimizer_plan_test_router
 
 # Configure logging with proper format and level
 logging.basicConfig(
@@ -146,7 +147,7 @@ def create_app() -> FastAPI:
     app.include_router(upload_router, tags=["Upload"])
     app.include_router(redis_router, tags=["Redis"])
     app.include_router(agent_router, tags=["Agent"])
-    
+    app.include_router(optimizer_plan_test_router, tags=["Optimizer Plan Test"])
     return app
 
 # Create application instance

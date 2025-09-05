@@ -158,16 +158,6 @@ async def upload_driver_features(request: Request, file: UploadFile = File(...))
                 else:
                     row["depot_location"] = None
 
-                if row.get("whitelisted_warehouses") and row.get("whitelisted_warehouses") != 'NULL':
-                    try:
-                        row["whitelisted_warehouses"] = json.loads(row.get("whitelisted_warehouses"))
-                    except json.JSONDecodeError:
-                        row["reason"] = "Invalid JSON for whitelisted_warehouses"
-                        error_rows.append(row)
-                        continue
-                else:
-                    row["whitelisted_warehouses"] = None
-
                 driver_features.append({
                     "driver_id": row.get("driver_id"),
                     "carrier": carrier,  # Overriding with token's carrier
@@ -187,8 +177,7 @@ async def upload_driver_features(request: Request, file: UploadFile = File(...))
                     "driver_table_id": row.get("driver_table_id") if row.get("driver_table_id") and row.get("driver_table_id") != 'NULL' else None,
                     "depot_customer_id": row.get("depot_customer_id") if row.get("depot_customer_id") and row.get("depot_customer_id") != 'NULL' else None,
                     "depot_location": row.get("depot_location") if row.get("depot_location") and row.get("depot_location") != 'NULL' else None,
-                    "b_train": row.get("b_train").lower() == 'true' if isinstance(row.get("b_train"), str) else False,
-                    "whitelisted_warehouses": row["whitelisted_warehouses"]
+                    "b_train": row.get("b_train").lower() == 'true' if isinstance(row.get("b_train"), str) else False
                   })
 
             if not driver_features:

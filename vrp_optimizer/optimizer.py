@@ -18,6 +18,7 @@ from vrp_optimizer.routing_distance import (
 from vrp_optimizer.assumptions import (
     VRP_ALGORITHMS,
     CHASSIS_ACTIVITIES,
+    LATE_ARRIVAL_MINUTES,
     get_carrier_vrp_assumptions,
 )
 
@@ -37,7 +38,6 @@ class Optimizer:
         plan_start_minute = 0,
         plan_end_minute = 1440,
         carrier_id = None,
-        allow_late_arrivals_upto_n_minutes = 0,
         plan_date = None,
         max_time_dimension_minutes = 1440
     ):
@@ -89,7 +89,6 @@ class Optimizer:
         self.ALGORITHM = ALGORITHM
         self.plan_start_minute = plan_start_minute
         self.plan_end_minute = plan_end_minute
-        self.allow_late_arrivals_upto_n_minutes = allow_late_arrivals_upto_n_minutes
         self.plan_date = plan_date
         self.max_time_dimension_minutes = max_time_dimension_minutes
 
@@ -126,152 +125,156 @@ class Optimizer:
             IMPORTANT: As we are also considering the destination move's waiting time and it's distance, "Visiting a Node" means that, the visited node is completed.
             It also creates the node data.
         """
-        minute_matrix = []
-        distance_matrix = []
-        chassis_matrix = []
+        try:
+            minute_matrix = []
+            distance_matrix = []
+            chassis_matrix = []
 
-        # MATRIX
-        for i in range(len(nodes)):
-            minute_matrix.append([0] * len(nodes))
-            distance_matrix.append([0] * len(nodes))
-            chassis_matrix.append([{ "activity": CHASSIS_ACTIVITIES["NO_ACTION"] }] * len(nodes))
+            # MATRIX
+            for i in range(len(nodes)):
+                minute_matrix.append([0] * len(nodes))
+                distance_matrix.append([0] * len(nodes))
+                chassis_matrix.append([{ "activity": CHASSIS_ACTIVITIES["NO_ACTION"] }] * len(nodes))
 
-        for i1, source in enumerate(nodes):
-            for i2, destination in enumerate(nodes):
+            for i1, source in enumerate(nodes):
+                for i2, destination in enumerate(nodes):
 
-                if i1 == i2:
-                    continue
+                    if i1 == i2:
+                        continue
 
-                is_chassis_activity_needed = False
+                    is_chassis_activity_needed = False
 
-                # Get locations once to avoid repeated dict lookups
-                source_end = source.get('end_loc')
-                dest_start = destination.get('start_loc')
-                
-                # Calculate distance and time metrics
-                distance_between_nodes = get_distance_between_locations_from_matrix(source_end, dest_start, self.LOCATION_DISTANCE_MATRIX)
+                    # Get locations once to avoid repeated dict lookups
+                    source_end = source.get('end_loc')
+                    dest_start = destination.get('start_loc')
+                    
+                    # Calculate distance and time metrics
+                    distance_between_nodes = get_distance_between_locations_from_matrix(source_end, dest_start, self.LOCATION_DISTANCE_MATRIX)
 
-                chassis_activity = get_chassis_activity_between_moves(
-                    source,
-                    destination,
-                    self.EQUIPMENT_VALIDATIONS,
-                    self.YARDS,
-                    self.LOCATION_DISTANCE_MATRIX,
-                    self.carrier_id
-                )
-
-                if chassis_activity.get('type') != CHASSIS_ACTIVITIES["NO_ACTION"]:
-                    is_chassis_activity_needed = True
-
-                    # Calculate distance and time metrics for chassis activity
-                    locations = [source_end]
-                    if chassis_activity.get('drop_yard'):
-                        locations.append(chassis_activity.get('drop_yard').get('location'))
-                    if chassis_activity.get('hook_yard'):
-                        locations.append(chassis_activity.get('hook_yard').get('location'))
-                    locations.append(dest_start)
-
-                    distance_between_nodes = distance_between_locations_list_from_matrix(locations, self.LOCATION_DISTANCE_MATRIX)
-
-                    chassis_matrix[i1][i2] = {
-                        "activity": chassis_activity['type'],
-                        "yard_location": chassis_activity.get('drop_yard') or chassis_activity.get('hook_yard'),
-                        "drop_yard": chassis_activity.get('drop_yard'),
-                        "hook_yard": chassis_activity.get('hook_yard')
-                    }
-
-                minute_to_cover_distance = minute_from_distance(distance_between_nodes, self.distance_unit)
-                
-                # Get destination metrics once
-                dest_minutes = destination.get('minutes_on_road', 0)
-                dest_waiting = destination.get('total_waiting_time', 0)
-                dest_early_arrival_waiting = destination.get('early_arrival_waiting', 0)
-                
-                # Calculate total minutes and store in matrix
-
-                minutes = 0
-
-                if source.get('isDepot') and destination.get('isDepot') and source.get('hash_key') == destination.get('hash_key'):
-                    minutes = 0
-                elif source.get('last_move_by_driver', False) and not destination.get('isDepot'):
-                    # Make all the container moves (not the depots) unaccessible from the free flow trip.
-                    minutes = self.assumptions.get('MAX_MINUTES')
-                else:
-                    minutes = int(
-                        minute_to_cover_distance +
-                        (self.assumptions.get('TIME_TO_SWITCH_CHASSIS') if is_chassis_activity_needed else 0) +
-                        dest_minutes +
-                        dest_waiting +
-                        dest_early_arrival_waiting +
-                        (self.assumptions.get('BUFFER_TIME_FOR_NEXT_NODE') if minute_to_cover_distance > 0 else 0)
+                    chassis_activity = get_chassis_activity_between_moves(
+                        source,
+                        destination,
+                        self.EQUIPMENT_VALIDATIONS,
+                        self.YARDS,
+                        self.LOCATION_DISTANCE_MATRIX,
+                        self.carrier_id
                     )
 
-                minute_matrix[i1][i2] = minutes
+                    if chassis_activity.get('type') != CHASSIS_ACTIVITIES["NO_ACTION"]:
+                        is_chassis_activity_needed = True
 
-                # Set distance matrix value based on depot status
-                distance_matrix[i1][i2] = (
-                    0 if source.get('isDepot') and destination.get('isDepot') and source.get('hash_key') == destination.get('hash_key')
-                    else math.ceil(distance_between_nodes)
-                )
-        
-        # NODE DATA
-        node_data = []
-        depot_index_dict = {}
-        route_index_dict = {}
-        for node_index, node in enumerate(nodes):
-            total_waiting_time = node.get('total_waiting_time', 0)
-            minutes_on_road = node.get('minutes_on_road', 0)
-            early_arrival_waiting = node.get('early_arrival_waiting', 0)
-            route_distance = node.get('route_distance', 0)
+                        # Calculate distance and time metrics for chassis activity
+                        locations = [source_end]
+                        if chassis_activity.get('drop_yard'):
+                            locations.append(chassis_activity.get('drop_yard').get('location'))
+                        if chassis_activity.get('hook_yard'):
+                            locations.append(chassis_activity.get('hook_yard').get('location'))
+                        locations.append(dest_start)
 
-            node_details = {
-                **node,
-                'route_distance': int(route_distance),
-                'locations': node.get('locations', []),
-                'time_to_process_move': int(
-                    total_waiting_time +
-                    minutes_on_road +
-                    early_arrival_waiting +
-                    self.assumptions.get('BUFFER_TIME_FOR_NEXT_NODE')
-                ),
-                'reference_number': node.get('_id', ''),
-                'move': node.get('move', []),
-                'move_index': node.get('move_index', 0),
-                'available_range': (
-                    node.get('expected_from_minute', 0),
-                    node.get('expected_to_minute', 1439)
-                ),
-                'start_loc': node.get('start_loc', []),
-                'end_loc': node.get('end_loc', []),
-                'terminal': node.get('terminal', ""),
-                'isDepot': node.get('isDepot', False),
-                'strictly_coupled_move': node.get('strictly_coupled_move', None),
+                        distance_between_nodes = distance_between_locations_list_from_matrix(locations, self.LOCATION_DISTANCE_MATRIX)
+
+                        chassis_matrix[i1][i2] = {
+                            "activity": chassis_activity['type'],
+                            "yard_location": chassis_activity.get('drop_yard') or chassis_activity.get('hook_yard'),
+                            "drop_yard": chassis_activity.get('drop_yard'),
+                            "hook_yard": chassis_activity.get('hook_yard')
+                        }
+
+                    minute_to_cover_distance = minute_from_distance(distance_between_nodes, self.distance_unit)
+                    
+                    # Get destination metrics once
+                    dest_minutes = destination.get('minutes_on_road', 0)
+                    dest_waiting = destination.get('total_waiting_time', 0)
+                    dest_early_arrival_waiting = destination.get('early_arrival_waiting', 0)
+                    
+                    # Calculate total minutes and store in matrix
+
+                    minutes = 0
+
+                    if source.get('isDepot') and destination.get('isDepot') and source.get('hash_key') == destination.get('hash_key'):
+                        minutes = 0
+                    elif source.get('last_move_by_driver', False) and not destination.get('isDepot'):
+                        # Make all the container moves (not the depots) unaccessible from the free flow trip.
+                        minutes = self.assumptions.get('MAX_MINUTES')
+                    else:
+                        minutes = int(
+                            minute_to_cover_distance +
+                            (self.assumptions.get('TIME_TO_SWITCH_CHASSIS') if is_chassis_activity_needed else 0) +
+                            dest_minutes +
+                            dest_waiting +
+                            dest_early_arrival_waiting +
+                            (self.assumptions.get('BUFFER_TIME_FOR_NEXT_NODE') if minute_to_cover_distance > 0 else 0)
+                        )
+
+                    minute_matrix[i1][i2] = minutes
+
+                    # Set distance matrix value based on depot status
+                    distance_matrix[i1][i2] = (
+                        0 if source.get('isDepot') and destination.get('isDepot') and source.get('hash_key') == destination.get('hash_key')
+                        else math.ceil(distance_between_nodes)
+                    )
+            
+            # NODE DATA
+            node_data = []
+            depot_index_dict = {}
+            route_index_dict = {}
+            for node_index, node in enumerate(nodes):
+                total_waiting_time = node.get('total_waiting_time', 0)
+                minutes_on_road = node.get('minutes_on_road', 0)
+                early_arrival_waiting = node.get('early_arrival_waiting', 0)
+                route_distance = node.get('route_distance', 0)
+
+                node_details = {
+                    **node,
+                    'route_distance': int(route_distance),
+                    'locations': node.get('locations', []),
+                    'time_to_process_move': int(
+                        total_waiting_time +
+                        minutes_on_road +
+                        early_arrival_waiting +
+                        self.assumptions.get('BUFFER_TIME_FOR_NEXT_NODE')
+                    ),
+                    'reference_number': node.get('_id', ''),
+                    'move': node.get('move', []),
+                    'move_index': node.get('move_index', 0),
+                    'available_range': (
+                        node.get('expected_from_minute', 0),
+                        node.get('expected_to_minute', 1439)
+                    ),
+                    'start_loc': node.get('start_loc', []),
+                    'end_loc': node.get('end_loc', []),
+                    'terminal': node.get('terminal', ""),
+                    'isDepot': node.get('isDepot', False),
+                    'strictly_coupled_move': node.get('strictly_coupled_move', None),
+                }
+
+                route_index_dict[node.get('_id')+'_'+str(node.get('move_index'))] = node_index
+
+                if node.get('isDepot'):
+                    depot_index_dict[node.get('hash_key')] = node_index
+
+                node_data.append(node_details)
+
+            for node_index, node in enumerate(node_data):
+                node['previous_node'] = route_index_dict.get(node.get('reference_number')+'_'+str(node.get('move_index')-1), None)
+                if node.get('previous_node') is None:
+                    del node['previous_node']
+
+            for v in vehicles:
+                v['start_node'] = depot_index_dict.get(v.get('depot_hash_key')) if v.get('depot_hash_key') else 0
+                v['end_node'] = depot_index_dict.get(v.get('depot_hash_key')) if v.get('depot_hash_key') else 0
+
+            return {
+                'MINUTE_MATRIX': minute_matrix,
+                'DISTANCE_MATRIX': distance_matrix,
+                'CHASSIS_MATRIX': chassis_matrix,
+                'NODE_DATA': node_data,
+                'VEHICLES': vehicles,
+                'route_index_dict': route_index_dict
             }
-
-            route_index_dict[node.get('_id')+'_'+str(node.get('move_index'))] = node_index
-
-            if node.get('isDepot'):
-                depot_index_dict[node.get('hash_key')] = node_index
-
-            node_data.append(node_details)
-
-        for node_index, node in enumerate(node_data):
-            node['previous_node'] = route_index_dict.get(node.get('reference_number')+'_'+str(node.get('move_index')-1), None)
-            if node.get('previous_node') is None:
-                del node['previous_node']
-
-        for v in vehicles:
-            v['start_node'] = depot_index_dict.get(v.get('depot_hash_key')) if v.get('depot_hash_key') else 0
-            v['end_node'] = depot_index_dict.get(v.get('depot_hash_key')) if v.get('depot_hash_key') else 0
-
-        return {
-            'MINUTE_MATRIX': minute_matrix,
-            'DISTANCE_MATRIX': distance_matrix,
-            'CHASSIS_MATRIX': chassis_matrix,
-            'NODE_DATA': node_data,
-            'VEHICLES': vehicles,
-            'route_index_dict': route_index_dict
-        }
+        except Exception as e:
+            print(f"Error in create_data: {str(e)}")
+            raise e
     
     def init_solver(self):
         """
@@ -404,11 +407,12 @@ class Optimizer:
             index = self.manager.NodeToIndex(location_idx)
             window = node_data['available_range']
 
+            allow_late_arrivals_upto_n_minutes = LATE_ARRIVAL_MINUTES
             # Check if you want to allow lateness up to a certain limit
-            if self.allow_late_arrivals_upto_n_minutes > 0:
+            if allow_late_arrivals_upto_n_minutes > 0:
                 # 1. Set the PENALTY (the "fine") starting at the ideal deadline.
                 #    It's better to use a fixed penalty from your assumptions for easier tuning.
-                penalty_for_late_arrival = round(self.assumptions['SKIP_NODE_PENALTY'] / self.allow_late_arrivals_upto_n_minutes)
+                penalty_for_late_arrival = round(self.assumptions['SKIP_NODE_PENALTY'] / allow_late_arrivals_upto_n_minutes)
                 self.time_dimension.SetCumulVarSoftUpperBound(
                     index,
                     window[1] + 1,
@@ -417,7 +421,7 @@ class Optimizer:
 
                 # 2. Set the HARD LIMIT (the "physical barrier").
                 #    This is the original deadline plus your allowed buffer.
-                max_allowed_time = window[1] + self.allow_late_arrivals_upto_n_minutes
+                max_allowed_time = window[1] + allow_late_arrivals_upto_n_minutes
                 self.time_dimension.CumulVar(index).SetMax(max_allowed_time)
 
                 # 3. Ensure the earliest time is still respected.

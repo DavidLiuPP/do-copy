@@ -214,7 +214,10 @@ async def map_actionable_combined_trips(
             load_with_info['distance'] = sum(event.get('distance', 0) for event in actionable_move)
             load_with_info['load_assigned_date'] = actionable_move[0].get('loadAssignedDate')
 
-            actionable_trips.append(load_with_info)
+            # all the events in actionabe_move should have customerId
+            are_locations_specified = all(event.get('customerId') for event in actionable_move)
+            if are_locations_specified:
+                actionable_trips.append(load_with_info)
 
         if len(actionable_trips) > 0:
             waiting_times = await get_waiting_time(carrier, all_locations)
@@ -434,7 +437,7 @@ async def map_loads_for_optimizer(
                 
                 # Check move properties
                 is_manually_planned = any(event.get('is_manually_planned') for event in actionable_move)
-                is_combined_trip = any(event.get('combineTripId') for event in actionable_move)
+                is_combined_trip = any(event.get('combineTripId') and not event.get('isDualTransaction') for event in actionable_move)
 
                 pickup_event = next((event for event in actionable_move if event.get('type') == 'PULLCONTAINER'), None)
                 is_free_flow_move = load_copy.get('orderId') and load_copy.get('orderId') in free_flow_orders and pickup_event and load_copy['type_of_load'] == 'IMPORT' 

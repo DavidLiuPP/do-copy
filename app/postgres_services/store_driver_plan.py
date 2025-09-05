@@ -171,7 +171,8 @@ async def save_optimizer_loads(carrier, converted_plan_date, optimal_plan, plan_
             
             for move in optimal_plan:
                 row_values = []
-                if move.get('move')[0].get('combineTripId') is not None:
+                is_combined_trip = any(event.get('combineTripId') and not event.get('isDualTransaction') for event in move.get('move'))
+                if is_combined_trip:
                     continue
                 move_id = next(m.get('moveId', None) for m in move["move"])
                 move_values = {

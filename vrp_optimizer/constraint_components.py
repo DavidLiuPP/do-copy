@@ -116,12 +116,6 @@ CONSTRAINT_RULES: List[Dict[str, Any]] = [
         'vehicle_field': 'restricted_locations',
     },
     {
-        'constraint_name': 'whitelisted_warehouses',
-        'node_field': 'warehouse_ids',
-        'operator': 'OPTIONAL_IN',
-        'vehicle_field': 'whitelisted_warehouses',
-    },
-    {
         'constraint_name': 'preferred_states',
         'node_field': 'preferred_states',
         'operator': 'SUBSET_OF',

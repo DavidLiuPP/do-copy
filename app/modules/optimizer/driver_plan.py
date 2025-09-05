@@ -136,8 +136,7 @@ async def get_optmized_driver_plan(
     background_tasks: BackgroundTasks = None,
     behind_schedule_moves: list = [],
     is_in_day_plan: bool = False,
-    driver_schedules: List[Dict[str, Any]] = [],
-    allow_late_arrivals: bool = False
+    driver_schedules: List[Dict[str, Any]] = []
 ) -> Dict[str, Any]:
     try:
         # Validate inputs
@@ -248,7 +247,6 @@ async def get_optmized_driver_plan(
             behind_schedule_moves=behind_schedule_moves,
             is_in_day_plan=is_in_day_plan,
             driver_schedules=driver_schedules,
-            allow_late_arrivals=allow_late_arrivals,
             invalid_moves=invalid_moves
         )
         optimal_plan = optimizer_output['optimal_plan']

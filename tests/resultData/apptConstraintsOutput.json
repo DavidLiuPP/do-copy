@@ -1,0 +1,127 @@
+[
+    {
+        "Driver Name": "68b53fff740da2cea7fb64ef",
+        "node": [
+            {
+                "start_move_minute": 52.41500000000002,
+                "move_completed_minute": 391,
+                "event_times": [
+                    {
+                        "type": "PULLCONTAINER",
+                        "waiting_time": 60,
+                        "distance": 0,
+                        "location": "2 Gannett Drive, Johnson City, NY 13790, US",
+                        "company_name": "A",
+                        "customer_id": "68b53ec1740da2cea7fb4cba",
+                        "map_location": [
+                            42.1154097,
+                            -75.94698939999999
+                        ],
+                        "recommended_enroute": "00:52",
+                        "recommended_arrived": "00:52",
+                        "recommended_departed": "01:52",
+                        "minutes": {
+                            "recommended_enroute": 52.41500000000002,
+                            "recommended_arrived": 52.41500000000002,
+                            "recommended_departed": 112.41500000000002
+                        },
+                        "appointment_from": 351885,
+                        "appointment_to": 351900
+                    },
+                    {
+                        "type": "DELIVERLOAD",
+                        "waiting_time": 60,
+                        "distance": 46.09,
+                        "location": "872 New York 13, Cortland, NY 13045, US",
+                        "company_name": "J",
+                        "customer_id": "68b53ec1740da2cea7fb4cc3",
+                        "map_location": [
+                            42.5732272,
+                            -76.2147201
+                        ],
+                        "recommended_enroute": "01:52",
+                        "recommended_arrived": "03:11",
+                        "recommended_departed": "04:11",
+                        "minutes": {
+                            "recommended_enroute": 112.41500000000002,
+                            "recommended_arrived": 191.55,
+                            "recommended_departed": 251.55
+                        },
+                        "appointment_from": 352020,
+                        "appointment_to": 352035
+                    },
+                    {
+                        "type": "RETURNCONTAINER",
+                        "waiting_time": 60,
+                        "distance": 46.3,
+                        "location": "2 Gannett Drive, Johnson City, NY 13790, US",
+                        "company_name": "A",
+                        "customer_id": "68b53ec1740da2cea7fb4cba",
+                        "map_location": [
+                            42.1154097,
+                            -75.94698939999999
+                        ],
+                        "recommended_enroute": "04:11",
+                        "recommended_arrived": "05:31",
+                        "recommended_departed": "06:31",
+                        "minutes": {
+                            "recommended_enroute": 251.55,
+                            "recommended_arrived": 331,
+                            "recommended_departed": 391
+                        },
+                        "appointment_from": 351360,
+                        "appointment_to": 352799
+                    }
+                ],
+                "start_loc": [
+                    42.1154097,
+                    -75.94698939999999
+                ],
+                "end_loc": [
+                    42.1154097,
+                    -75.94698939999999
+                ],
+                "reference_number": "ABC_M100007",
+                "move_index": 0,
+                "chassis_pick_event": {
+                    "type": "CHASSISPICK",
+                    "customerId": "68b53ec1740da2cea7fb4cba",
+                    "start_loc": [
+                        42.1154097,
+                        -75.94698939999999
+                    ],
+                    "end_loc": [
+                        42.1154097,
+                        -75.94698939999999
+                    ],
+                    "distance": 0.0,
+                    "recommended_departed": 52.41500000000002,
+                    "recommended_arrived": 42.41500000000002,
+                    "recommended_enroute": 42.41500000000002
+                },
+                "chassis_termination_event": {
+                    "type": "CHASSISTERMINATION",
+                    "customerId": "68b53ec1740da2cea7fb4cba",
+                    "start_loc": [
+                        42.1154097,
+                        -75.94698939999999
+                    ],
+                    "end_loc": [
+                        42.1154097,
+                        -75.94698939999999
+                    ],
+                    "distance": 0.0,
+                    "recommended_enroute": 391,
+                    "recommended_arrived": 391,
+                    "recommended_departed": 401
+                }
+            }
+        ],
+        "empty_miles": 0,
+        "empty_miles_d": 0,
+        "total_hours": 5.64,
+        "total_moves": 1,
+        "was_invoked_early": true,
+        "woke_up_at": "00:52"
+    }
+]

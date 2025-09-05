@@ -29,6 +29,8 @@ def _extract_pickup_times(load: Dict[str, Any]) -> Dict[str, Optional[datetime]]
     pickup_times = load.get('pickupTimes', [])
     if pickup_times and len(pickup_times) > 0:
         pickup_time = pickup_times[0]
+        if pickup_time.get('pickupFromTime') and  not pickup_time.get('pickupToTime'):   
+            pickup_time['pickupToTime'] = pickup_time['pickupFromTime']
         times.update({
             'pickupFromTime': pickup_time.get('pickupFromTime'),
             'pickupToTime': pickup_time.get('pickupToTime')
@@ -55,6 +57,8 @@ def _extract_delivery_times(load: Dict[str, Any]) -> Dict[str, Optional[datetime
     delivery_times = load.get('deliveryTimes', [])
     if delivery_times and len(delivery_times) > 0:
         delivery_time = delivery_times[0]
+        if delivery_time.get('deliveryFromTime') and  not delivery_time.get('deliveryToTime'):   
+            delivery_time['deliveryToTime'] = delivery_time['deliveryFromTime']
         times.update({
             'deliveryFromTime': delivery_time.get('deliveryFromTime'),
             'deliveryToTime': delivery_time.get('deliveryToTime')
@@ -116,6 +120,9 @@ def map_loads_for_scheduler(loads: List[Dict[str, Any]]) -> List[Dict[str, Any]]
             delivery_times = _extract_delivery_times(load_copy)
             load_copy.update(pickup_times)
             load_copy.update(delivery_times)
+
+            if load_copy.get('returnFromTime') and not load_copy.get('returnToTime'):
+                load_copy['returnToTime'] = load_copy['returnFromTime']
             
             # Remove original time fields
             load_copy.pop('pickupTimes', None)

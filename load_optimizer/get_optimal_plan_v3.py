@@ -23,8 +23,7 @@ from load_optimizer.get_optimal_plan_v2 import get_formatted_time
 from app.modules.optimizer.constants import (
     ONE_DAY_IN_MINUTES,
     CARRIER_CONFIGS,
-    PLANNING_ASSUMPTIONS,
-    LATE_ARRIVAL_MINUTES
+    PLANNING_ASSUMPTIONS
 )
 from app.modules.optimizer.in_day_service import get_schedule_info_from_driver_schedules, update_actionable_moves_for_inday_plan
 
@@ -76,7 +75,6 @@ async def get_optimal_plan_v3(
     behind_schedule_moves: List[Dict[str, Any]] = [],
     is_in_day_plan: bool = False,
     driver_schedules: List[Dict[str, Any]] = [],
-    allow_late_arrivals: bool = False,
     invalid_moves: List[Dict[str, Any]] = []
 ):
     try:
@@ -224,8 +222,6 @@ async def get_optimal_plan_v3(
             unique_coords = get_unique_coordinates(total_locations)
             location_distance_matrix = await get_location_distance_matrix_bulk(carrier, unique_coords, distance_unit)
 
-            allow_late_arrivals_upto_n_minutes = LATE_ARRIVAL_MINUTES if allow_late_arrivals else 0
-
             # Create a process pool for running the optimization
             with multiprocessing.Pool(1) as pool:
                 # Run the optimization in a separate process with timeout
@@ -259,6 +255,8 @@ async def get_optimal_plan_v3(
                         "max_time_dimension_minutes": max_time_dimension_minutes
                     }
 
+                    # moves_copy = [m for m in moves_copy if m['_id'] == 'SEAPT_TOR_M226900']
+                    moves_copy = moves_copy[:50]
                     optimizer = Optimizer(
                         moves = moves_copy,
                         drivers = filtered_vehicle_data,
@@ -272,7 +270,6 @@ async def get_optimal_plan_v3(
                         plan_start_minute = plan_start_minute,
                         plan_end_minute = plan_end_minute,
                         carrier_id = user_payload.get('carrier'),
-                        allow_late_arrivals_upto_n_minutes = allow_late_arrivals_upto_n_minutes,
                         plan_date = converted_plan_date,
                         max_time_dimension_minutes = max_time_dimension_minutes
                     )

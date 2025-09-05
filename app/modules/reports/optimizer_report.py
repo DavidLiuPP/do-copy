@@ -834,7 +834,7 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
             total_travel_time = sum(event.get('travel_time', 0) for event in move['move'])
             move['total_travel_time'] = total_travel_time
         # get optimal plan
-        optimizer_output = await get_optimal_plan_v3(user_payload, actionable_moves, drivers, converted_plan_date, branch=plan_branch, shift=shift, allow_late_arrivals=True)
+        optimizer_output = await get_optimal_plan_v3(user_payload, actionable_moves, drivers, converted_plan_date, branch=plan_branch, shift=shift)
         optimal_plan = optimizer_output['optimal_plan']
 
         get_unplanned_moves = find_unplanned_moves(actionable_moves, optimal_plan)

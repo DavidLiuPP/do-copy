@@ -26,8 +26,6 @@ DISTANCE_MULTIPLIER = 1.5
 
 ONE_DAY_IN_MINUTES = 24 * 60
 
-LATE_ARRIVAL_MINUTES = 120
-
 # Chassis yard configurations for different carriers
 CHASSIS_YARD_CONFIGS = {
     '641a10875b159a160742327e': {

@@ -41,24 +41,22 @@ async def get_drivers(
                 SELECT 
                     drivers.*,
                     users._id,
-                    driver_features.owner_score,
-                    driver_features.per_mile_pay,
                     drivers.min_miles as min_mileage,
                     drivers.max_miles as max_mileage,
-                    driver_features.depot_location,
-                    driver_features.depot_customer_id,
-                    driver_features.whitelisted_warehouses,
                     equipments.is_oog_endorsement,
                     equipments.is_cng_endorsement,
                     equipments.is_daycab_truck,
-                    equipments.is_sleeper_truck
+                    equipments.is_sleeper_truck,
+                    customers.lat as depot_lat,
+                    customers.lng as depot_lng
                 FROM drivers 
                 LEFT JOIN users 
                     ON drivers._id = users.driver
-                LEFT JOIN driver_features 
-                    ON users._id = driver_features.driver_id
                 LEFT JOIN equipments 
-                    on  drivers._id = equipments."_id"    
+                    on  drivers._id = equipments."_id"
+                LEFT JOIN customers 
+                    ON drivers.depot_customer_id = customers."_id" 
+                    AND customers.carrier = $1
                 WHERE drivers.carrier = $1 
                     AND drivers.is_deleted = false
             """
@@ -102,7 +100,7 @@ async def get_drivers(
 
             # remove unnecessary fields from drivers
             driver_unnecessary_fields = ['permissions', 'billing_email', 'invoice_currency_with_branch', 'invoice_currency_with_carrier',
-                                         'accounting_info']
+                                         'accounting_info', 'depot_lat', 'depot_lng']
 
             # default_yard_locations = await get_default_yard_location(carrier)
             # first_yard_location = default_yard_locations[0]
@@ -113,11 +111,17 @@ async def get_drivers(
             driver_list_keys = ['pickup_prefferred', 'preferred_states', 'preferred_distance', 'new_terminal',
                                 'truck_type', 'tags', 'preferred_types_of_load', 'delivery_prefferred',
                                 'ower_weight_states', 'profile_type', 'working_days_hours', 'preferred_move_types',
-                                'over_weight_country', 'restricted_locations', 'preferred_chassis_types', 'preferred_country',
-                                'whitelisted_warehouses']
-            driver_dict_keys = ['depot_location']
-            
+                                'over_weight_country', 'restricted_locations', 'preferred_chassis_types', 'preferred_country']
+
+
             for driver in drivers:
+                # manage driver owner_score and depot location
+                driver['owner_score'] = driver.get('driver_ranking', 5)
+
+                driver['depot_location'] = {
+                    "lat": driver.get('depot_lat', 0),
+                    "lng": driver.get('depot_lng', 0),
+                }
                 for field in driver_unnecessary_fields:
                     driver.pop(field, None)
 
@@ -127,20 +131,6 @@ async def get_drivers(
                     except Exception as e:
                         driver[key] = []
                         logger.error(f"Error parsing {key} for driver {driver.get('_id')}: {str(e)}")
-                
-                for key in driver_dict_keys:
-                    try:
-                        driver[key] = json.loads(driver.get(key, "{}") or "{}")
-                    except Exception as e:
-                        driver[key] = {}
-                        logger.error(f"Error parsing {key} for driver {driver.get('_id')}: {str(e)}")
-
-                # if not driver.get('depot_location'):
-                #     driver['depot_location'] = {
-                #         "lat": first_yard_location.get("address", {}).get("lat", 0),
-                #         "lng": first_yard_location.get("address", {}).get("lng", 0)
-                #     }
-                #     driver['depot_customer_id'] = first_yard_location.get("customerId", "")
 
                 all_working_days_hours = next(
                     (e for e in driver.get('working_days_hours', []) 
