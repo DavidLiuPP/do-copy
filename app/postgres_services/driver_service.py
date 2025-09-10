@@ -41,7 +41,7 @@ async def get_drivers(
                 SELECT 
                     drivers.*,
                     users._id,
-                    drivers.min_miles as min_mileage,
+                    case when drivers.min_miles is not null then drivers.min_miles else 0 end as min_mileage,
                     drivers.max_miles as max_mileage,
                     equipments.is_oog_endorsement,
                     equipments.is_cng_endorsement,

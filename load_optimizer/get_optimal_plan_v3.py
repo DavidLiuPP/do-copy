@@ -255,8 +255,9 @@ async def get_optimal_plan_v3(
                         "max_time_dimension_minutes": max_time_dimension_minutes
                     }
 
-                    # moves_copy = [m for m in moves_copy if m['_id'] == 'SEAPT_TOR_M226900']
-                    moves_copy = moves_copy[:50]
+                    # moves_copy = [m for m in moves_copy if m['_id'] == 'SEAPT_TOR_M226094']
+                    # moves_copy = moves_copy[:50]
+                    # moves_copy[0]['deliveryToTime'] = '2025-09-09T:00:00Z'
                     optimizer = Optimizer(
                         moves = moves_copy,
                         drivers = filtered_vehicle_data,

@@ -22,6 +22,8 @@ from vrp_optimizer.assumptions import (
     get_carrier_vrp_assumptions,
 )
 
+from vrp_optimizer.debug import OptimizerDebugger
+
 class Optimizer:
     def __init__(
         self,
@@ -806,6 +808,9 @@ class Optimizer:
             This method is the main method that optimizes the solution.
         """
         try:
+            debugger = OptimizerDebugger(self)
+            print(debugger.generate_debug_report())
+
             self.init_solver()
             self.add_disjunctions_and_penalties()
             self.add_time_dimension()
@@ -816,6 +821,10 @@ class Optimizer:
             self.add_strictly_coupled_moves()
             self.set_search_parameters()
             solution = self.get_solution()
+            if not solution:
+                # Analyze failure
+                failure_analysis = debugger.analyze_solver_failure()
+                print(f"Solver failed: {failure_analysis}")
             self.answer = self.manage_solution(solution) if solution else []
 
             if self.answer:
