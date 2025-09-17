@@ -8,8 +8,7 @@ logger = logging.getLogger(__name__)
 
 async def get_drivers(
     carrier: str,
-    plan_date: str,
-    plan_branch: list = [],
+    driver_criteria: Dict[str, Any],
     settings: Dict[str, Any] = {'exclude_account_hold': True}
 ) -> List[Dict[str, Any]]:
     """
@@ -17,8 +16,7 @@ async def get_drivers(
     
     Args:
         carrier: Carrier ID to fetch driver for
-        plan_date: Plan date to check driver hold status
-        plan_branch: List of plan branches to filter by
+        driver_criteria: Dictionary containing driver criteria
         settings: Dictionary containing query settings
         
     Returns:
@@ -41,7 +39,7 @@ async def get_drivers(
                 SELECT 
                     drivers.*,
                     users._id,
-                    case when drivers.min_miles is not null then drivers.min_miles else 0 end as min_mileage,
+                    drivers.min_miles as min_mileage,
                     drivers.max_miles as max_mileage,
                     equipments.is_oog_endorsement,
                     equipments.is_cng_endorsement,
@@ -59,6 +57,7 @@ async def get_drivers(
                     AND customers.carrier = $1
                 WHERE drivers.carrier = $1 
                     AND drivers.is_deleted = false
+                    AND (drivers.exclude_from_plan = false OR drivers.exclude_from_plan IS NULL)
             """
             
             # Add account hold conditions if exclude_account_hold is True
@@ -74,18 +73,17 @@ async def get_drivers(
                         )
                     )
                 """.format(len(params) + 1, len(params) + 1))
-                params.append(plan_date)
+                params.append(driver_criteria.get('plan_date'))
             
             # Add plan branch condition if provided
-            if len(plan_branch) > 0:
+            if driver_criteria.get('plan_branch') is not None:
                 conditions.append(" AND drivers.new_terminal::jsonb ?| ${}".format(len(params) + 1))
-                params.append(plan_branch)
-            
-            # Add shift conditions
-            if settings.get('shift') == 'day':
-                conditions.append(" AND drivers.is_day_driver = true")
-            elif settings.get('shift') == 'night':
-                conditions.append(" AND drivers.is_day_driver = false")
+                params.append(driver_criteria.get('plan_branch'))
+
+            # add driver tags condition if provided
+            if driver_criteria.get('driver_tags') is not None:
+                conditions.append(" AND drivers.tags::jsonb ?| ${}".format(len(params) + 1))
+                params.append(driver_criteria.get('driver_tags'))
                 
             # Add conditions to query
             query += ' '.join(conditions)
@@ -106,7 +104,7 @@ async def get_drivers(
             # first_yard_location = default_yard_locations[0]
 
             # map the working days hours to the drivers
-            current_day_of_week = plan_date.strftime("%A")
+            current_day_of_week = driver_criteria.get('plan_date').strftime("%A")
 
             driver_list_keys = ['pickup_prefferred', 'preferred_states', 'preferred_distance', 'new_terminal',
                                 'truck_type', 'tags', 'preferred_types_of_load', 'delivery_prefferred',
@@ -146,6 +144,9 @@ async def get_drivers(
 
                 driver['start_time'] = start_time
                 driver['end_time'] = end_time
+
+                driver['is_company_driver'] = 'COMPANY DRIVER' in driver.get('profile_type', [])
+                driver['is_owner_operator'] = 'OWNER OPERATOR' in driver.get('profile_type', [])
 
             # filter the drivers without depot location or depot customer id
             drivers = [

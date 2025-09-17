@@ -26848,20 +26848,6 @@
     }
   },
   {
-    "portCode": "PNCT",
-    "day_of_week": [
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday"
-    ],
-    "freeflow_appt": {
-      "start_time": "06:00",
-      "end_time": "18:00"
-    }
-  },
-  {
     "portCode": "PURE FACADES LLC, US",
     "day_of_week": [
       "Monday",
@@ -27328,7 +27314,7 @@
       "Saturday",
       "Sunday"
     ],
-    "mandatory_appt": {
+    "freeflow_appt": {
       "start_time": "00:00",
       "end_time": "23:59"
     }
@@ -27876,7 +27862,7 @@
       "Saturday",
       "Sunday"
     ],
-    "mandatory_appt": {
+    "freeflow_appt": {
       "start_time": "06:00",
       "end_time": "18:00"
     }
@@ -30584,22 +30570,6 @@
     "mandatory_appt": {
       "start_time": "13:00",
       "end_time": "16:00"
-    }
-  },
-  {
-    "portCode": "CP VAUGHAN",
-    "day_of_week": [
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday",
-      "Sunday"
-    ],
-    "mandatory_appt": {
-      "start_time": "00:00",
-      "end_time": "23:59"
     }
   },
   {
@@ -36742,7 +36712,11 @@
   {
     "portCode": "CARTERM",
     "day_of_week": [
-      "Monday"
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
     ],
     "mandatory_appt": {
       "start_time": "07:00",
@@ -36795,7 +36769,11 @@
   {
     "portCode": "TSPM ENTREPOT",
     "day_of_week": [
-      "Monday"
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
     ],
     "mandatory_appt": {
       "start_time": "09:00",
@@ -36861,7 +36839,11 @@
   {
     "portCode": "KRONE NA, INC - QUEBEC",
     "day_of_week": [
-      "Monday"
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
     ],
     "mandatory_appt": {
       "start_time": "08:00",

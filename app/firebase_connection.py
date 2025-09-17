@@ -47,6 +47,20 @@ class FirebaseConnection:
             logger.error(f"Failed to store data at Firebase channel {channel}: {str(e)}")
             raise
 
+    async def get_data(self, channel: str) -> Dict[str, Any]:
+        """
+        Get data from specified Firebase channel/path using REST API.
+        """
+        try:
+            url = f"{settings.FIREBASE_DATABASEURL}/{channel}.json"
+            params = {'auth': settings.FIREBASE_APIKEY}
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get data from Firebase channel {channel}: {str(e)}")
+            raise
+
 def get_firebase_client():
     """
     Factory function to get Firebase connection manager instance.

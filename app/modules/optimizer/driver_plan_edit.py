@@ -15,8 +15,10 @@ async def _get_load_data(carrier: str, reference_number: str) -> Dict[str, Any]:
     """Fetch and validate load data from MongoDB."""
     loads = await get_loads_with_reference_numbers(
         carrier=carrier,
-        reference_numbers=[reference_number],
-        plan_branch=[],
+        load_criteria={
+            'reference_numbers': [reference_number],
+            'plan_branch': [],
+        },
         limit=1
     )
     if not loads:

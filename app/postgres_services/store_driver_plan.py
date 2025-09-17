@@ -12,7 +12,9 @@ async def save_summary_of_optimal_plan(
     latest_version,
     converted_plan_date,
     plan_branch = [],
-    shift = None
+    shift = None,
+    driver_tags = [],
+    route_type = []
 ):
     # Define column order as a constant
     # Define fields for optimizer plans table
@@ -58,7 +60,9 @@ async def save_summary_of_optimal_plan(
         "driver_pay": total_driver_pay,
         "unscheduled_moves": 0, # TODO: Implement unscheduled moves
         "branch": '{' + ','.join(plan_branch) + '}',  # Format as Postgres array literal
-        "shift": shift
+        "shift": shift,
+        "driver_tags": '{' + ','.join(driver_tags) + '}',  # Format as Postgres array literal
+        "route_type": '{' + ','.join(route_type) + '}',  # Format as Postgres array literal
     }
 
     all_fields = optimal_plan_values.keys()

@@ -7,7 +7,7 @@ from fastapi import BackgroundTasks
 
 from app.modules.optimizer.driver_plan_service import save_plan_details, upload_plan_json_to_s3
 from app.modules.optimizer.hos_service import get_hos_data_for_drivers
-from app.modules.scheduler.utility import map_loads_for_scheduler
+from app.modules.scheduler.utility import map_loads_for_scheduler, manage_generate_plan_status
 from app.modules.scheduler.move_scheduler import retrieve_scheduled_moves_for_optimizer
 from app.modules.optimizer.map_loads_optimizer_service import map_loads_for_optimizer
 from app.services.common_service import get_time_zone, get_carrier_preferences
@@ -22,8 +22,9 @@ from app.mongo_services.load_service import (
 
 from load_optimizer.get_optimal_plan_v2 import get_unassigned_moves
 from load_optimizer.get_optimal_plan_v3 import get_optimal_plan_v3
-from app.modules.optimizer.utility import get_planning_time_windows
+from app.modules.optimizer.utility import get_shift_time
 from app.modules.optimizer.in_day_service import save_suggestions, get_behind_schedule_moves_for_in_day_plan
+from vrp_optimizer.helpers import generated_criteria
 
 
 # Configure module logger
@@ -50,31 +51,27 @@ def validate_optimizer_parameters(
 
 async def retrieve_loads_for_planning(
     user_payload: Dict[str, Any],
-    converted_plan_date: datetime,
-    reference_numbers: list = [],
+    load_criteria: Dict[str, Any],
     plan_from_time: datetime = None,
     plan_to_time: datetime = None,
     plan_drivers: list = [],
-    plan_branch: list = [],
     add_to_existing_plan: bool = False,
-    shift: str = None,
     is_specific_load: bool = False,
     shift_window: list = [0, 1440],
     is_in_day_plan: bool = False,
-    behind_schedule_moves: list = []
+    behind_schedule_moves: list = [],
 ):
     try:
         carrier = user_payload.get('carrier')
+        reference_numbers = load_criteria.get('reference_numbers', [])
 
         # retrieve loads scheduled for the given date
         start_scheduled_plans_time = time.time()
         scheduled_plans = await retrieve_scheduled_moves_for_optimizer(
             user_payload=user_payload,
-            plan_branch=plan_branch,
-            converted_plan_date=converted_plan_date,
+            load_criteria=load_criteria,
             plan_from_time=plan_from_time,
             plan_to_time=plan_to_time,
-            shift=shift
         )
         end_scheduled_plans_time = time.time()
         print(f"Time taken to get scheduled plans: {end_scheduled_plans_time - start_scheduled_plans_time} seconds")
@@ -100,12 +97,16 @@ async def retrieve_loads_for_planning(
             # Get the moves assigned or arrived in the shift time window.
             assigned_moves = await get_assigned_moves(
                 user_payload=user_payload,
-                from_time=converted_plan_date + timedelta(minutes=shift_window[0]),
-                to_time=converted_plan_date + timedelta(minutes=shift_window[1]),
+                load_criteria=load_criteria,
+                from_time=load_criteria.get('plan_date') + timedelta(minutes=shift_window[0]),
+                to_time=load_criteria.get('plan_date') + timedelta(minutes=shift_window[1]),
                 add_to_existing_plan=add_to_existing_plan,
-                plan_branch=plan_branch,
-                plan_drivers=plan_drivers
+                plan_drivers=plan_drivers,
             )
+
+            # set is_active_move to True for the assigned moves
+            for move in assigned_moves:
+                move['is_active_move'] = True
 
             if is_specific_load:
                 assigned_moves = [move for move in assigned_moves if move.get('reference_number') in reference_numbers]
@@ -113,7 +114,7 @@ async def retrieve_loads_for_planning(
         assigned_reference_numbers = list(set(load.get('reference_number') for load in assigned_moves))
         reference_numbers = [ref for ref in reference_numbers if ref not in assigned_reference_numbers]
         
-        available_loads = await get_available_loads(carrier, reference_numbers, plan_branch, 2000)
+        available_loads = await get_available_loads(carrier, load_criteria = {**load_criteria, 'reference_numbers': reference_numbers}, limit=2000)
         loads = [*assigned_moves, *available_loads]
 
         return loads, scheduled_plans
@@ -136,8 +137,11 @@ async def get_optmized_driver_plan(
     background_tasks: BackgroundTasks = None,
     behind_schedule_moves: list = [],
     is_in_day_plan: bool = False,
-    driver_schedules: List[Dict[str, Any]] = []
+    driver_schedules: List[Dict[str, Any]] = [],
+    driver_tags: list = [],
+    route_type: list = []
 ) -> Dict[str, Any]:
+    is_manage_plan_status = True if not is_in_day_plan and save_plan else False
     try:
         # Validate inputs
         carrier = user_payload.get('carrier')
@@ -147,13 +151,15 @@ async def get_optmized_driver_plan(
         timeZone = await get_time_zone(carrier)
         tz = pytz.timezone(timeZone)
         converted_plan_date = tz.localize(datetime.strptime(plan_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
+        
+        if is_manage_plan_status:
+            await manage_generate_plan_status(carrier, plan_date, "RUNNING", plan_branch)
 
         # get default yard location
-        default_yard_locations = await get_default_yard_location(carrier)
+        default_yard_locations = await get_default_yard_location(carrier, False, plan_branch)
         carrier_preferences = await get_carrier_preferences(carrier)
 
-        planning_windows = await get_planning_time_windows(carrier, converted_plan_date, shift, plan_branch, timeZone)
-        planning_minutes = planning_windows.get('plan_window') or [0, 1440]
+        planning_minutes = await get_shift_time(carrier, converted_plan_date, shift, plan_branch, timeZone)
         plan_from_time = converted_plan_date + timedelta(minutes=planning_minutes[0])
         plan_to_time = converted_plan_date + timedelta(minutes=planning_minutes[1])
         
@@ -161,16 +167,25 @@ async def get_optmized_driver_plan(
         user_payload['timeZone'] = timeZone
         user_payload['distanceUnit'] = carrier_preferences.get('distanceUnit', 'mi')
 
+        driver_criteria, load_criteria = generated_criteria(
+            plan_date=converted_plan_date,
+            plan_branch=plan_branch,
+            shift=shift,
+            driver_tags=driver_tags,
+            route_type=route_type
+        )
+
         # get drivers
         start_driver_time = time.time()
         drivers = await get_drivers(
             carrier=carrier,
-            plan_date=converted_plan_date,
-            plan_branch=plan_branch,
-            settings={'exclude_account_hold': True, 'shift': shift}
+            driver_criteria=driver_criteria,
+            settings={'exclude_account_hold': True}
         )
 
         if not drivers:
+            if is_manage_plan_status:
+                await manage_generate_plan_status(carrier, plan_date, "ERROR", plan_branch)
             raise Exception("No drivers found for the given date")
 
         # map drivers with HOS
@@ -183,17 +198,14 @@ async def get_optmized_driver_plan(
         start_loads_time = time.time()
         loads, scheduled_plans = await retrieve_loads_for_planning(
             user_payload=user_payload,
-            converted_plan_date=converted_plan_date,
-            reference_numbers=reference_numbers,
+            load_criteria=load_criteria,
             plan_from_time=plan_from_time,
             plan_to_time=plan_to_time,
             plan_drivers=plan_drivers,
-            plan_branch=plan_branch,
             add_to_existing_plan=add_to_existing_plan,
-            shift=shift,
-            shift_window=planning_windows.get('shift_window', {}) or [0, 1440],
+            shift_window=planning_minutes,
             is_in_day_plan=is_in_day_plan,
-            behind_schedule_moves=behind_schedule_moves
+            behind_schedule_moves=behind_schedule_moves,
         )
         end_loads_time = time.time()
         print(f"Time taken to get loads: {end_loads_time - start_loads_time} seconds")
@@ -212,7 +224,7 @@ async def get_optmized_driver_plan(
         print(f"Time taken to add recommended returns: {end_add_recommended_returns_time - start_add_recommended_returns_time} seconds")
 
         start_map_loads_for_optimizer_time = time.time()    
-        actionable_moves, invalid_moves = await map_loads_for_optimizer(
+        actionable_moves, invalid_moves, removed_moves = await map_loads_for_optimizer(
             user_payload=user_payload,
             loads=mapped_loads,
             scheduled_plans=scheduled_plans,
@@ -220,8 +232,8 @@ async def get_optmized_driver_plan(
             plan_range={
                 'from_time': plan_from_time,
                 'to_time': plan_to_time,
-                'shift_from_time':  converted_plan_date + timedelta(minutes=planning_windows.get('shift_window')[0]),
-                'shift_to_time':  converted_plan_date + timedelta(minutes=planning_windows.get('shift_window')[1]),
+                'shift_from_time':  converted_plan_date + timedelta(minutes=planning_minutes[0]),
+                'shift_to_time':  converted_plan_date + timedelta(minutes=planning_minutes[1]),
             },
             options={
                 'is_approved_move_ids_provided': is_approved_move_ids_provided,
@@ -234,6 +246,8 @@ async def get_optmized_driver_plan(
         )
         end_map_loads_for_optimizer_time = time.time()
         print(f"Time taken to map loads for optimizer: {end_map_loads_for_optimizer_time - start_map_loads_for_optimizer_time} seconds")
+
+        valid_mapped_loads = [load for load in mapped_loads if load.get('reference_number') not in removed_moves]
         
         # get optimal plan
         start_optimal_plan_time = time.time()
@@ -255,20 +269,20 @@ async def get_optmized_driver_plan(
         
         end_optimal_plan_time = time.time()
         print(f"Time taken to get optimal plan: {end_optimal_plan_time - start_optimal_plan_time} seconds")
-        plan_id = ""
 
+        unassigned_plans = get_unassigned_moves(
+            optimal_plan=optimal_plan,
+            all_loads=valid_mapped_loads,
+            invalid_moves=invalid_moves,
+            plan_date=converted_plan_date,
+            timeZone=timeZone,
+            actionable_moves=actionable_moves
+        )
+
+        plan_id = ""
         # Save Plan Details
         try:
             if save_plan and optimal_plan:
-                unassigned_plans = get_unassigned_moves(
-                    optimal_plan=optimal_plan,
-                    all_loads=mapped_loads,
-                    invalid_moves=invalid_moves,
-                    plan_date=converted_plan_date,
-                    timeZone=timeZone,
-                    actionable_moves=actionable_moves
-                )
-                
                 start_save_plan_details_time = time.time()
                 plan_id = await save_plan_details(
                     user_payload=user_payload,
@@ -278,7 +292,11 @@ async def get_optmized_driver_plan(
                     plan_branch=plan_branch,
                     shift=shift,
                     background_tasks=background_tasks,
+                    driver_tags=driver_tags,
+                    route_type=route_type
                 )
+                if is_manage_plan_status:
+                    await manage_generate_plan_status(carrier, plan_date, "COMPLETED", plan_branch, plan_id)
                 
                 # Upload plan input JSON to S3
                 try:
@@ -289,20 +307,30 @@ async def get_optmized_driver_plan(
 
                 end_save_plan_details_time = time.time()
                 print(f"Time taken to save plan details: {end_save_plan_details_time - start_save_plan_details_time} seconds")
+            else:
+                if is_manage_plan_status:
+                    logger.info(f"Background task: No optimal plan generate for {plan_date} and carrier {carrier}" )
+                    await manage_generate_plan_status(carrier, plan_date, "ERROR", plan_branch)
         except Exception as e:
+            if is_manage_plan_status:
+                logger.info(f"Background task: Failed to save plan details {plan_date} and carrier {carrier}" )
+                await manage_generate_plan_status(carrier, plan_date, "ERROR", plan_branch)
             logger.error("Failed to save plan details", e)
 
         return {
             "carrier": carrier,
             "plan_date": plan_date,
             "recommended_moves": optimal_plan,
+            "unassigned_plans": unassigned_plans,
             "plan_id": str(plan_id) if plan_id else ""
         }
     
     except Exception as e:
         logger.error(e)
+        if is_manage_plan_status:
+            logger.info(f"Background task: Failed to generate optimal plan for {plan_date} and carrier {carrier}" )
+            await manage_generate_plan_status(carrier, plan_date, "ERROR", plan_branch)
         raise e
-
 
 async def manage_in_day_plan(
     user_payload: Dict[str, Any],
@@ -360,7 +388,9 @@ async def get_optimizer_review_recommendation(
     plan_date: str,
     reference_numbers: list = [],
     plan_branch: list = [],
-    shift: Any = None
+    shift: Any = None,
+    driver_tags: list = [],
+    route_type: list = []
 ) -> Dict[str, Any]:
     try:
         # get loads for the given date
@@ -372,7 +402,7 @@ async def get_optimizer_review_recommendation(
         converted_plan_date = tz.localize(datetime.strptime(plan_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
 
         # get default yard location
-        default_yard_locations = await get_default_yard_location(carrier)
+        default_yard_locations = await get_default_yard_location(carrier, False, plan_branch)
         carrier_preferences = await get_carrier_preferences(carrier)
 
         user_payload['default_yard_locations'] = default_yard_locations
@@ -380,36 +410,41 @@ async def get_optimizer_review_recommendation(
         user_payload['distanceUnit'] = carrier_preferences.get('distanceUnit', 'mi')
 
 
-        planning_windows = await get_planning_time_windows(carrier, converted_plan_date, shift, plan_branch, timeZone)
-        planning_minutes = planning_windows.get('plan_window') or [0, 1440]
+        planning_minutes = await get_shift_time(carrier, converted_plan_date, shift, plan_branch, timeZone)
         plan_from_time = converted_plan_date + timedelta(minutes=planning_minutes[0])
         plan_to_time = converted_plan_date + timedelta(minutes=planning_minutes[1])
 
+        driver_criteria, load_criteria = generated_criteria(
+            plan_branch=plan_branch,
+            shift=shift, 
+            reference_numbers=reference_numbers,
+            driver_tags=driver_tags,
+            route_type=route_type,
+            plan_date=converted_plan_date
+        )
         plan_drivers = None
-        if shift:
-            drivers = await get_drivers(carrier, converted_plan_date, plan_branch, {'exclude_account_hold': True, 'shift': shift})
+        if shift or driver_tags:
+            driver_settings = {'exclude_account_hold': True}
+            drivers = await get_drivers(carrier, driver_criteria, driver_settings)
             if not drivers:
-                raise Exception("No drivers found for the given shift")
+                raise Exception("No drivers found for the given shift or driver tags")
             plan_drivers = [driver.get('_id') for driver in drivers]
 
         loads, scheduled_plans = await retrieve_loads_for_planning(
             user_payload=user_payload,
-            converted_plan_date=converted_plan_date,
-            reference_numbers=reference_numbers,
+            load_criteria=load_criteria,
             plan_from_time=plan_from_time,
             plan_to_time=plan_to_time,
             plan_drivers=plan_drivers,
-            plan_branch=plan_branch,
             add_to_existing_plan=True,
-            shift=shift,
             is_specific_load=True,
-            shift_window=planning_windows.get('shift_window', {}) or [0, 1440]
+            shift_window=planning_minutes,
         )
 
         mapped_loads = map_loads_for_scheduler(loads)
         mapped_loads = await add_recommended_returns(user_payload, plan_date, mapped_loads)
 
-        actionable_moves, _ = await map_loads_for_optimizer(
+        actionable_moves, _, _ = await map_loads_for_optimizer(
             user_payload=user_payload,
             loads=mapped_loads,
             scheduled_plans=scheduled_plans,
@@ -417,8 +452,8 @@ async def get_optimizer_review_recommendation(
             plan_range={
                 'from_time': plan_from_time,
                 'to_time': plan_to_time,
-                'shift_from_time':  converted_plan_date + timedelta(minutes=planning_windows.get('shift_window')[0]),
-                'shift_to_time':  converted_plan_date + timedelta(minutes=planning_windows.get('shift_window')[1]),
+                'shift_from_time':  converted_plan_date + timedelta(minutes=planning_minutes[0]),
+                'shift_to_time':  converted_plan_date + timedelta(minutes=planning_minutes[1]),
             },
             plan_drivers=plan_drivers
         )
@@ -455,108 +490,6 @@ async def get_optimizer_review_recommendation(
             "recommendations": recommendations
         }
 
-    except Exception as e:
-        logger.error(e)
-        raise Exception(f"Failed to get optimizer plan recommendation: {str(e)}")
-
-async def get_in_day_actions(
-    user_payload: Dict[str, Any],
-    plan_date: str,
-    reference_numbers: list = [],
-    plan_branch: list = [],
-    shift: Any = None,
-) -> Dict[str, Any]:
-    try:
-        # get loads for the given date
-        carrier = user_payload.get('carrier')
-        validate_optimizer_parameters(carrier, plan_date, shift, plan_branch)
-
-        timeZone = await get_time_zone(carrier)
-        tz = pytz.timezone(timeZone)
-        converted_plan_date = tz.localize(datetime.strptime(plan_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
-
-        # get default yard location
-        default_yard_locations = await get_default_yard_location(carrier)
-        carrier_preferences = await get_carrier_preferences(carrier)
-
-        user_payload['default_yard_locations'] = default_yard_locations
-        user_payload['timeZone'] = timeZone
-        user_payload['distanceUnit'] = carrier_preferences.get('distanceUnit', 'mi')
-
-        planning_windows = await get_planning_time_windows(carrier, converted_plan_date, shift, plan_branch, timeZone)
-        planning_minutes = planning_windows.get('plan_window') or [0, 1440]
-        plan_from_time = converted_plan_date + timedelta(minutes=planning_minutes[0])
-        plan_to_time = converted_plan_date + timedelta(minutes=planning_minutes[1])
-        
-
-        plan_drivers = None
-
-        loads, scheduled_plans = await retrieve_loads_for_planning(
-            user_payload=user_payload,
-            converted_plan_date=converted_plan_date,
-            reference_numbers=reference_numbers,
-            plan_from_time=plan_from_time,
-            plan_to_time=plan_to_time,
-            plan_drivers=plan_drivers,
-            plan_branch=plan_branch,
-            add_to_existing_plan=True,
-            shift=shift,
-            shift_window=planning_windows.get('shift_window', {}) or [0, 1440]
-        )
-
-        mapped_loads = map_loads_for_scheduler(loads)
-        mapped_loads = await add_recommended_returns(user_payload, plan_date, mapped_loads)
-
-        actionable_moves, _ = await map_loads_for_optimizer(
-            user_payload=user_payload,
-            loads=mapped_loads,
-            scheduled_plans=scheduled_plans,
-            converted_plan_date=converted_plan_date,
-            plan_range={
-                'from_time': plan_from_time,
-                'to_time': plan_to_time,
-                'shift_from_time':  converted_plan_date + timedelta(minutes=planning_windows.get('shift_window')[0]),
-                'shift_to_time':  converted_plan_date + timedelta(minutes=planning_windows.get('shift_window')[1]),
-            },
-            plan_drivers=plan_drivers
-        )
-
-        modified_moves = []
-        for move in actionable_moves:
-            # if driver is assigned to the move, then ignore the move
-            is_assigned_move = any(event.get('driver') for event in move.get('move'))
-            if is_assigned_move:
-                continue
-
-            if move.get('is_modified_move'):
-                move_data = {
-                    '_id': move.get('_id'),
-                    'reference_number': move.get('reference_number'),
-                    'move_id': move.get('move', [])[0].get('moveId'),
-                    'recommended_move': [
-                        {k: v for k, v in event.items() if k not in ['waiting_time_distribution']}
-                        for event in move.get('move')
-                    ],
-                }
-
-                if move.get('free_flow_order'):
-                    move_data['free_flow_order'] = move.get('free_flow_order')
-
-                modified_moves.append(move_data)
-            else:
-                move_data = {
-                    '_id': move.get('_id'),
-                    'reference_number': move.get('reference_number'),
-                    'move_id': move.get('move', [])[0].get('moveId'),
-                    'recommended_move': []
-                }
-
-                if move.get('free_flow_order'):
-                    move_data['free_flow_order'] = move.get('free_flow_order')
-
-                modified_moves.append(move_data)
-
-        return modified_moves
     except Exception as e:
         logger.error(e)
         raise Exception(f"Failed to get optimizer plan recommendation: {str(e)}")

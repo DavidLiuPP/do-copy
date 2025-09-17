@@ -10,6 +10,18 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
+@lru_cache(maxsize=1024)
+def minute_from_distance(distance, unit = 'mi'):
+    speed = (
+        20 if distance <= 10 else
+        40 if distance <= 50 else
+        60
+    )
+
+    if unit == 'km':
+        speed = speed * 1.60934
+
+    return (distance / speed) * 60 + 10
 
 @lru_cache(maxsize=1024)
 def calculate_distance(lat1, lng1, lat2, lng2, unit = 'mi'):
@@ -28,163 +40,137 @@ def calculate_distance_between_locations(loc1: Tuple[float, float], loc2: Tuple[
 
 
 async def get_road_distance_between_locations(
-    source_location: Tuple[float, float], 
-    dest_location: Tuple[float, float], 
+    matrix: List[Tuple[float, float]], 
     carrier: str,
     distance_unit: str = 'mi'
-) -> Dict[str, Any]:
+) -> List[Dict[str, Any]]:
     """
-    Get the road distance between two locations using the OSRM API.
-    
-    Args:
-        source_location: Tuple of (latitude, longitude) for source
-        dest_location: Tuple of (latitude, longitude) for destination  
-        distance_unit: Unit of distance ('mi' for miles, 'km' for kilometers, 'm' for meters)
-        
-    Returns:
-        Dict containing distance metrics and routing information
+    Get the road distance between locations using OSRM API.
     """
-    # Initialize response with default values
-    response = {
-        'distance': 0.0,
-        'distance_miles': 0.0, 
-        'distance_km': 0.0,
-        'distance_meters': 0.0,
-        'travel_time_minutes': 0.0,
-        'avg_speed_kmh': 0.0,
-        'source_coords': source_location,
-        'dest_coords': dest_location,
-        'success': False,
-        'routing_method': None,
-        'carrier': carrier
-    }
-
-    # Calculate air distance with multiplier
-    air_distance = calculate_distance_between_locations(source_location, dest_location, distance_unit) * 1.5
-    
-    # Convert air distance to different units
-    conversion = {
-        'mi': {'meters': 1609.34, 'km': 1.60934},
-        'km': {'meters': 1000, 'miles': 0.621371},
-        'm': {'miles': 0.000621371, 'km': 0.001}
-    }[distance_unit]
-    
-    air_distances = {
-        'meters': air_distance * conversion.get('meters', 1000),
-        'miles': air_distance * conversion.get('miles', 1) if distance_unit != 'mi' else air_distance,
-        'km': air_distance * conversion.get('km', 1) if distance_unit != 'km' else air_distance
-    }
-
     try:
         if not settings.DISTANCE_ROUTING_URL:
             raise Exception('Distance routing URL is not set')
 
-        url = f"{settings.DISTANCE_ROUTING_URL}/route/v1/driving/{source_location[1]},{source_location[0]};{dest_location[1]},{dest_location[0]}?overview=full"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=5) as api_response:
-                    if api_response.status == 200:
-                        data = await api_response.json()
-                        first_route = data.get('routes', [{}])[0]
-                        distance_meters = first_route.get('distance', 0)
-                        duration = first_route.get('duration', 0)
+        url = f"{settings.DISTANCE_ROUTING_URL}/table/v1/truck"
+        
+        # Convert tuples to arrays and swap lat/lon to lon/lat as required by OSRM
+        coordinates = [[lon, lat] for lat, lon in matrix]
+        
+        data = {
+            "coordinates": coordinates,
+            "annotations": [
+                "distance",
+                "duration"
+            ]
+        }
 
-                        # Convert distance based on unit
-                        distance = distance_meters * {
-                            'km': 0.001,
-                            'm': 1,
-                            'mi': 0.000621371
-                        }[distance_unit]
+        for attempt in range(2):  # Try up to 2 times
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json=data, timeout=5) as api_response:
+                        if api_response.status == 200:
+                            response_data = await api_response.json()
+                            if response_data.get('code') != 'Ok':
+                                raise Exception('Invalid response from OSRM API')
+                            
+                            distances = response_data.get('distances', [])
+                            durations = response_data.get('durations', [])
+                            
+                            mapped_data = []
+                            for i, source in enumerate(matrix):
+                                for j, dest in enumerate(matrix):
+                                    distance = distances[i][j]
+                                    duration = durations[i][j]
+                                    # Convert distance based on unit
+                                    distance_in_unit = distance * {
+                                        'km': 0.001,
+                                        'm': 1,
+                                        'mi': 0.000621371
+                                    }[distance_unit]
+                                    if duration > 0:
+                                        avg_speed_kmh = distance / (duration / 3600)
+                                    else:
+                                        avg_speed_kmh = 0  # Avoid division by zero
 
-                        # Calculate speed if duration exists
-                        avg_speed_kmh = (distance_meters / (duration / 3600)) if duration > 0 else 0
-
-                        response.update({
-                            'distance': distance,
-                            'distance_miles': distance_meters * 0.000621371,
-                            'distance_km': distance_meters * 0.001,
-                            'distance_meters': distance_meters,
-                            'travel_time_minutes': duration / 60,
-                            'avg_speed_kmh': avg_speed_kmh,
-                            'routing_method': 'OSRM_API',
-                            'success': True
-                        })
-                    else:
-                        # Fallback to air distance
-                        response.update({
-                            'distance': air_distance,
-                            'distance_miles': air_distances['miles'],
-                            'distance_km': air_distances['km'], 
-                            'distance_meters': air_distances['meters'],
-                            'routing_method': 'OSRM_API_ERROR_AIR_FALLBACK',
-                            'success': True
-                        })
-        except asyncio.TimeoutError:
-            # Timeout occurred, fallback to air distance
-            print("Timeout occurred, fallback to air distance", source_location, dest_location)
-            response.update({
-                'distance': air_distance,
-                'distance_miles': air_distances['miles'],
-                'distance_km': air_distances['km'], 
-                'distance_meters': air_distances['meters'],
-                'routing_method': 'OSRM_API_TIMEOUT_AIR_FALLBACK',
-                'success': True
-            })
+                                    mapped_data.append({
+                                        'source_coords': source,
+                                        'dest_coords': dest,
+                                        'distance': distance_in_unit,
+                                        'duration': duration,
+                                        'distance_miles': distance * 0.000621371,
+                                        'distance_km': distance * 0.001,
+                                        'distance_meters': distance,
+                                        'travel_time_minutes': duration / 60,
+                                        'avg_speed_kmh': avg_speed_kmh,
+                                        'routing_method': 'OSRM_API',
+                                        'carrier': carrier
+                                    })
+                            return mapped_data
+                        else:
+                            logger.error(f'Failed to get road distance between locations: {api_response.status}')
+                            if attempt == 0:  # If this is the first attempt
+                                await asyncio.sleep(2)  # Wait 2 seconds before retrying
+                                continue  # Try again
+                            break  # If this is the second attempt, break and use air distance fallback
+            
+            except Exception as e:
+                logger.error(f'Error in get_road_distance_between_locations_bulk: {str(e)}')
+                if attempt == 0:  # If this is the first attempt
+                    await asyncio.sleep(2)  # Wait 2 seconds before retrying
+                    continue  # Try again
+                break  # If this is the second attempt, break and use air distance fallback
 
     except Exception as e:
-        # Fallback to air distance on error
-        response.update({
-            'distance': air_distance,
-            'distance_miles': air_distances['miles'],
-            'distance_km': air_distances['km'],
-            'distance_meters': air_distances['meters'],
-            'routing_method': 'ERROR_AIR_FALLBACK',
-            'success': True
-        })
+        logger.error(f'Error in get_road_distance_between_locations: {str(e)}')
+    
+    finally:
+        # Fallback to air distance calculation if both attempts failed
+        # Convert air distance to different units
+        conversion = {
+            'mi': {'meters': 1609.34, 'km': 1.60934},
+            'km': {'meters': 1000, 'miles': 0.621371},
+            'm': {'miles': 0.000621371, 'km': 0.001}
+        }[distance_unit]
 
-    return response
+        mapped_data = []
+        for i, source in enumerate(matrix):
+            for j, dest in enumerate(matrix):
+                # Calculate air distance with multiplier
+                air_distance = calculate_distance_between_locations(source, dest, distance_unit) * 1.5
+
+                air_distances = {
+                    'meters': air_distance * conversion.get('meters', 1000),
+                    'miles': air_distance * conversion.get('miles', 1) if distance_unit != 'mi' else air_distance,
+                    'km': air_distance * conversion.get('km', 1) if distance_unit != 'km' else air_distance
+                }
+
+                mapped_data.append({
+                    'source_coords': source,
+                    'dest_coords': dest,
+                    'distance': air_distance,
+                    'distance_miles': air_distances['miles'],
+                    'distance_km': air_distances['km'],
+                    'distance_meters': air_distances['meters'],
+                    'travel_time_minutes': minute_from_distance(air_distance, distance_unit),
+                    'avg_speed_kmh': air_distance / (minute_from_distance(air_distance, distance_unit) / 3600),
+                    'routing_method': 'ERROR_AIR_FALLBACK',
+                    'carrier': carrier
+                })
+        return mapped_data
 
 async def get_location_distance_matrix_bulk(carrier: str, coordinates: List[Tuple[float, float]], distance_unit: str) -> List[Dict[str, Any]]:
     """
     For all pairs, get the road distance from OSRM API, and return a location_distance_matrix.
     """
-    pairs = get_pairs_from_coordinates(coordinates)
-    start_loads_time = time.time()
-    new_results = []
-    print(f'pairs length: {len(pairs)}')
-    if pairs:
-        chunk_size = 100
-        for i in range(0, len(pairs), chunk_size):
-            chunk = pairs[i:i+chunk_size]   
-            start_chunk_time = time.time()
-            chunk_results = await asyncio.gather(*(
-                get_road_distance_between_locations(
-                    start,
-                    end,
-                    carrier,
-                    distance_unit
-                ) for start, end in chunk
-            ))
-            # print(f'Time taken for chunk {i // chunk_size} of {len(pairs) // chunk_size} chunks: {time.time() - start_chunk_time} seconds')
-            new_results.extend(chunk_results)
-    print(f'new_results length: {len(new_results)}')
-    end_loads_time = time.time()
-    print(f'Time taken to get road distances from osm routing: {end_loads_time - start_loads_time} seconds')
-    location_distance_matrix = []
-    for result in new_results:
-        location_distance_matrix.append({
-            'source_coords': result['source_coords'],
-            'dest_coords': result['dest_coords'],
-            'distance': result.get('distance'),
-            'distance_miles': result.get('distance_miles'),
-            'distance_km': result.get('distance_km'),
-            'distance_meters': result.get('distance_meters'),
-            'travel_time_minutes': result.get('travel_time_minutes'),
-            'avg_speed_kmh': result.get('avg_speed_kmh'),
-            'reason': result.get('error_message'),
-            'carrier': carrier
-        })
-    return location_distance_matrix
+    try:
+        start_loads_time = time.time()
+        new_results = await get_road_distance_between_locations(coordinates, carrier, distance_unit)
+        end_loads_time = time.time()
+        print(f'Time taken to get road distances from osm routing: {end_loads_time - start_loads_time} seconds')
+        return new_results
+    except Exception as e:
+        logger.error(f'Error in get_location_distance_matrix_bulk: {str(e)}')
+        return []
 
 def get_pairs_from_locations(locations: List[Dict[str, Any]]) -> List[Tuple[Tuple[float, float], Tuple[float, float]]]:
     pairs = set()

@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, date
 from typing import Any, Dict, List
 
-from app.modules.optimizer.constants import EVENT_TIME_MAP, CARRIER_CONFIGS
+from app.modules.optimizer.constants import EVENT_TIME_MAP, CARRIER_CONFIGS, YARD_ALLOWED_OPERATIONS
 from app.utils.distance_calc import calculate_distance_between_locations
 from app.services.redis_service import get_shift_times
 from app.postgres_services.drayage_intelligence_service import get_drayage_intelligence
@@ -188,7 +188,7 @@ def check_move_validity(
                         event['appointment_to'] = appointment_to.isoformat()
                         continue
                     
-                    if (port_data.get("mandatory_appt_no") and not load.get('appointmentNo') and 
+                    if (port_data.get("mandatory_appt_no") and not load.get('callerPONo') and 
                             event_type == 'PULLCONTAINER' and load['type_of_load'] == 'IMPORT'):
                         return False, event_type + '_APPT_CONSTRAINT_FAILED'
 
@@ -224,7 +224,12 @@ def modify_move_for_invalid_move(
         use_nearest_to_delivery_yard = CARRIER_CONFIGS.get(carrier_id, {}).get('use_nearest_to_delivery_yard', False)
 
         copied_move = deepcopy(move)
-        yard_locations = user_payload.get('default_yard_locations')
+        default_yard_locations = user_payload.get('default_yard_locations')
+        yard_locations = [
+            yard for yard in default_yard_locations
+            if yard.get('allowed_operations') and YARD_ALLOWED_OPERATIONS['CONTAINER_DROP_HOOK'] in yard.get('allowed_operations')
+        ]
+        
         distance_unit = user_payload.get('distanceUnit', 'mi')
 
         drayage_config = user_payload.get('drayage_config', {})
@@ -327,6 +332,7 @@ def populate_appointment_times_to_events(
     """
     try:
         timeZone = user_payload.get('timeZone')
+        carrier = user_payload.get('carrier')
         tz = pytz.timezone(timeZone)
         base_date = converted_plan_date
 
@@ -340,6 +346,7 @@ def populate_appointment_times_to_events(
         for event in actionable_move:
             event_type = event.get('type')
             load_copy = loads[0] if len(loads) > 0 else {}
+            type_of_load = load_copy.get('type_of_load', '')
 
             if len(loads) > 0 and event.get('reference_number'):
                 found_load = next(
@@ -354,6 +361,7 @@ def populate_appointment_times_to_events(
                 from_key, to_key = time_map[event_type]
                 if load_copy.get(from_key):
                     event.update({
+                        'type_of_load': type_of_load,
                         'appointment_from': load_copy.get(from_key),
                         'appointment_to': load_copy.get(to_key),
                         'is_scheduled': True
@@ -361,6 +369,17 @@ def populate_appointment_times_to_events(
         
         for index, event in enumerate(actionable_move):
             # Handle midnight start time
+            if (event.get('type') == 'DELIVERLOAD' and 
+                event.get('appointment_to') and 
+                type_of_load == 'IMPORT'):
+
+                import_deliverload_grace_time = CARRIER_CONFIGS.get(carrier, {}).get('IMPORT_DELIVERLOAD_GRACE_TIME', 0)
+
+                if import_deliverload_grace_time > 0:
+                    appointment_to_dt = datetime.fromisoformat(event['appointment_to'])
+                    appointment_to_dt += timedelta(minutes=import_deliverload_grace_time)
+                    event['appointment_to'] = appointment_to_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
             appt_from = event.get('appointment_from', None) and datetime.fromisoformat(event['appointment_from']).astimezone(tz)
             appt_to = event.get('appointment_to', None) and datetime.fromisoformat(event['appointment_to']).astimezone(tz)
             is_midnight_start = appt_from and appt_from.hour == 0
@@ -633,16 +652,19 @@ def filter_drivers_by_shift(drivers: List[Dict[str, Any]], shift: str) -> List[D
 def get_shift_start_end_minutes(shift_times: List[Dict[str, Any]], shift: str, branch: str = None) -> Dict[str, Any]:
     try:
         selected_shift_times = next((s for s in shift_times if s.get('name') == shift and (not branch or str(s.get('terminal', '')) == branch)), {})
-        shift_start_minute = selected_shift_times.get('start_minute', 0)
-        shift_end_minute = selected_shift_times.get('end_minute', 1440)
 
-        return int(shift_start_minute), int(shift_end_minute)
+        if selected_shift_times:
+            shift_start_minute = selected_shift_times.get('start_minute', 0)
+            shift_end_minute = selected_shift_times.get('end_minute', 1440)
+            return int(shift_start_minute), int(shift_end_minute)
+
+        return None, None
     except Exception as e:
         logger.error(f"Error getting shift start and end minutes: {str(e)}")
         raise
 
 
-async def get_planning_time_windows(
+async def get_shift_time(
     carrier: str,
     plan_date: datetime,
     shift: str,
@@ -650,42 +672,33 @@ async def get_planning_time_windows(
     time_zone: str = None
 ) -> Dict[str, Any]:
     try:
-        plan_start_minute = 0
-        plan_end_minute = 1440
+        shift_start_minute = CARRIER_CONFIGS.get(carrier, {}).get('plan_times', [0, 1440])[0]
+        shift_end_minute = CARRIER_CONFIGS.get(carrier, {}).get('plan_times', [0, 1440])[1]
 
         if shift:
             shift_times = await get_shift_times(carrier)
-            shift_start_minute, shift_end_minute = get_shift_start_end_minutes(
+            _shift_start_minute, _shift_end_minute = get_shift_start_end_minutes(
                 shift_times,
                 shift,
                 plan_branch[0] if plan_branch else None
             )
-
-            plan_start_minute = shift_start_minute
-            plan_end_minute = shift_end_minute
+            if _shift_start_minute:
+                shift_start_minute = _shift_start_minute
+            if _shift_end_minute:
+                shift_end_minute = _shift_end_minute
 
 
         current_time = datetime.now(pytz.timezone(time_zone))
         is_planning_for_today = plan_date.date() == current_time.date()
         current_minute_of_day = current_time.hour * 60 + current_time.minute
 
-        shift_start_minute = plan_start_minute
-        shift_end_minute = plan_end_minute
-
         if is_planning_for_today:
             # if the shift is over, then raise an error
-            if current_minute_of_day > plan_end_minute:
+            if current_minute_of_day > shift_end_minute:
                 raise Exception("Cannot plan for today after the shift is over.")
-            
-            # If the shift is already started then plan from current time
-            if current_minute_of_day > plan_start_minute:
-                plan_start_minute = current_minute_of_day
 
-        return {
-            'plan_window': [plan_start_minute, plan_end_minute],    # Plan the assignments between this window
-            'shift_window': [shift_start_minute, shift_end_minute]  # The shift time window
-        }
-    
+
+        return [shift_start_minute, shift_end_minute]
     except Exception as e:
         logger.error(e)
         raise Exception(f"{str(e)}")

@@ -51,42 +51,45 @@ async def get_office_hours(carrier: str, customer_ids: str, timeZone: str) -> Li
             location_office_hours = []
 
             for location in locations:
-                port_code = location['company_name']
-                day_of_week = datetime.now(pytz.timezone(timeZone)).strftime('%A')
+                try:
+                    port_code = location['company_name']
+                    day_of_week = datetime.now(pytz.timezone(timeZone)).strftime('%A')
 
-                port_appt_data = next(
-                    (port for port in APPOINTMENT_TIMES 
-                     if port['portCode'].upper() == port_code.upper() 
-                     and day_of_week in port['day_of_week']),
-                    {}
-                )
+                    port_appt_data = next(
+                        (port for port in APPOINTMENT_TIMES 
+                        if port['portCode'].upper() == port_code.upper() 
+                        and day_of_week in port['day_of_week']),
+                        {}
+                    )
 
-                if port_appt_data:
+                    if port_appt_data:
 
-                    freeflow_appt = port_appt_data.get('freeflow_appt')
-                    mandatory_appt = port_appt_data.get('mandatory_appt')
+                        freeflow_appt = port_appt_data.get('freeflow_appt')
+                        mandatory_appt = port_appt_data.get('mandatory_appt')
 
-                    if freeflow_appt:
-                        office_hours_start = datetime.strptime(freeflow_appt["start_time"], "%H:%M").time()
-                        office_hours_end = datetime.strptime(freeflow_appt["end_time"], "%H:%M").time()
-                    elif mandatory_appt:
-                        office_hours_start = datetime.strptime(mandatory_appt["start_time"], "%H:%M").time()
-                        office_hours_end = datetime.strptime(mandatory_appt["end_time"], "%H:%M").time()
-                    else:
-                        continue
+                        if freeflow_appt:
+                            office_hours_start = datetime.strptime(freeflow_appt["start_time"], "%H:%M").time()
+                            office_hours_end = datetime.strptime(freeflow_appt["end_time"], "%H:%M").time()
+                        elif mandatory_appt:
+                            office_hours_start = datetime.strptime(mandatory_appt["start_time"], "%H:%M").time()
+                            office_hours_end = datetime.strptime(mandatory_appt["end_time"], "%H:%M").time()
+                        else:
+                            continue
 
-                    data = {
-                        '_id': location['_id'],
-                        'office_hours_start': office_hours_start,
-                        'office_hours_end': office_hours_end
-                    }
+                        data = {
+                            '_id': location['_id'],
+                            'office_hours_start': office_hours_start,
+                            'office_hours_end': office_hours_end
+                        }
 
-                    if port_appt_data.get('grace_period_before_appt'):
-                        data['grace_period_before_appt'] = port_appt_data.get('grace_period_before_appt')
-                    if port_appt_data.get('grace_period_after_appt'):
-                        data['grace_period_after_appt'] = port_appt_data.get('grace_period_after_appt')
+                        if port_appt_data.get('grace_period_before_appt'):
+                            data['grace_period_before_appt'] = port_appt_data.get('grace_period_before_appt')
+                        if port_appt_data.get('grace_period_after_appt'):
+                            data['grace_period_after_appt'] = port_appt_data.get('grace_period_after_appt')
 
-                    location_office_hours.append(data)
+                        location_office_hours.append(data)
+                except Exception as e:
+                    continue
 
             return location_office_hours
             

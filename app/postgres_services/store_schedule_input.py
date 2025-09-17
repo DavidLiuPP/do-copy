@@ -56,6 +56,7 @@ LOAD_PROJECTION = {
     "deliveryToTime": 1,
     "revenue": 1,
     "appointmentNo": 1,
+    "callerPONo":1
 }
 
 async def store_mapped_loads_in_db(mapped_loads, planDetails):

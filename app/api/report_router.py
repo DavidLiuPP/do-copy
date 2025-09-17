@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 
 from app.modules.reports.scheduler_report import verify_scheduled_plan
-from app.modules.reports.optimizer_report import get_driver_plan_stats_controller, compare_optimiser_plan
+from app.modules.reports.optimizer_report import compare_optimiser_plan
 from app.modules.upload_model.upload_file import get_file_from_s3
 
 from vrp_optimizer.optimizer import Optimizer
@@ -31,40 +31,6 @@ async def verify_schedule_data(request: Request, plan_date: str):
             )
 
         result = await verify_scheduled_plan(carrier, plan_date)
-
-        response = { "result": result, "status": "success" }
-        return JSONResponse(content=response, status_code=200)
-
-    except Exception as e:
-        logger.error(e)
-        return JSONResponse(
-            content={"message": str(e), "status": "error"},
-            status_code=500
-        )
-
-@router.get("/get_driver_plan_stats")
-async def get_driver_plan_stats(request: Request, plan_id: str):
-    """
-    Get the stats for the driver plan
-    """
-    try:
-        user_payload = request.state.user
-        carrier = user_payload.get('carrier')
-        
-        if not carrier:
-            return JSONResponse(
-                content={"message": "Carrier ID not found in token"},
-                status_code=400
-            )
-        
-        if not plan_id:
-            return JSONResponse(
-                content={"message": "Plan ID is required"},
-                status_code=400
-            )
-
-        user_payload = { "carrier": carrier }
-        result = await get_driver_plan_stats_controller(user_payload, plan_id)
 
         response = { "result": result, "status": "success" }
         return JSONResponse(content=response, status_code=200)

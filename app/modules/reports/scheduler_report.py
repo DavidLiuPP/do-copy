@@ -32,7 +32,7 @@ async def verify_scheduled_plan(carrier: str, plan_date: str) -> Dict[str, Any]:
         appointment_to_time = converted_plan_date + timedelta(days=1)
 
         # get loads with appointment times
-        loads = await get_active_loads(carrier, 2000)
+        loads = await get_active_loads(carrier=carrier, load_criteria={}, limit=2000)
         pickup_loads = [
             load['reference_number'] 
             for load in loads 

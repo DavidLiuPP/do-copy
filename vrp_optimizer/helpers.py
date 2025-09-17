@@ -4,9 +4,11 @@ import pytz
 from functools import lru_cache
 from geopy.distance import geodesic
 from copy import deepcopy
-from vrp_optimizer.assumptions import CHASSIS_ACTIVITIES
-from app.modules.optimizer.constants import DISTANCE_MULTIPLIER, CHASSIS_YARD_CONFIGS
+from app.modules.optimizer.constants import DISTANCE_MULTIPLIER, CHASSIS_YARD_CONFIGS, YARD_ALLOWED_OPERATIONS
+from vrp_optimizer.assumptions import CHASSIS_ACTIVITIES, SKIP_NODE_PENALTY
 from bson import ObjectId
+from typing import Any, Dict, Optional
+
     
 from vrp_optimizer.routing_distance import (
     get_distance_between_locations_from_matrix
@@ -94,9 +96,9 @@ def get_cost_from_distance(distance):
             remaining_distance -= segment
 
         if remaining_distance > 0:
-            cost = 1000
+            cost = SKIP_NODE_PENALTY
 
-        return cost
+        return int(cost)
     except Exception as e:
         print(e)
         return 0
@@ -124,7 +126,8 @@ def get_yard_data(yard_locations):
             'minutes_on_road': 0,
             'early_arrival_waiting': 0,
             'locations': [],
-            '_id': 'Yard'
+            '_id': 'Yard',
+            'allowed_operations': yard_locations.get('allowed_operations', YARD_ALLOWED_OPERATIONS)
         }
 
 
@@ -215,14 +218,19 @@ def get_chassis_activity_between_moves(
         source_end = source.get('end_loc')
         dest_start = destination.get('start_loc')
         
+        yards = [ yard for yard in yards if yard.get('allowed_operations') and YARD_ALLOWED_OPERATIONS['CHASSIS_DROP_HOOK'] in yard.get('allowed_operations')]
+        
         # Get best yard for pickup
         best_yard_for_pickup = get_best_yard_for_chassis_action(source_end, dest_start, yards, location_distance_matrix, is_termination=False, carrier_id=carrier_id, destination_move=destination)
         
+
+        nearest_yard_for_chassis = next(({ 'location_id': yard.get('depot_customer_id'), 'location': yard.get('start_loc') } for yard in yards if yard.get('depot_customer_id') == destination.get('nearest_yard_for_chassis')), None) if destination.get('nearest_yard_for_chassis') else None
+
         # Get best yard for termination
         best_yard_for_termination = get_best_yard_for_chassis_action(source_end, dest_start, yards, location_distance_matrix, is_termination=True, carrier_id=carrier_id, destination_move=destination)
 
         if source.get('isDepot') and dest_start_event and dest_start_event.get('type') in ['PULLCONTAINER', 'LIFTON']:
-            return { 'type': CHASSIS_ACTIVITIES["HOOKCHASSIS"], 'hook_yard': best_yard_for_pickup }
+            return { 'type': CHASSIS_ACTIVITIES["HOOKCHASSIS"], 'hook_yard': nearest_yard_for_chassis or best_yard_for_pickup, 'chassis': destination.get('chassis', '') }
         
         if destination.get('isDepot') and source_end_event and source_end_event.get('type') in ['RETURNCONTAINER', 'LIFTOFF']:
             return { 'type': CHASSIS_ACTIVITIES["DROPCHASSIS"], 'drop_yard': best_yard_for_termination }
@@ -259,10 +267,11 @@ def get_chassis_activity_between_moves(
                 start_type = 'CHASSISPICK'
                 additional_chassis_activity.append({
                     'type': CHASSIS_ACTIVITIES["HOOKCHASSIS"],
-                    'hook_yard': {
+                    'hook_yard': nearest_yard_for_chassis or {
                         'location_id': dest_start_event['customerId'],
                         'location': dest_start
-                    }
+                    },
+                    'chassis': destination.get('chassis')
                 })
 
             # Map of end_type -> list of start_types that require chassis
@@ -281,10 +290,13 @@ def get_chassis_activity_between_moves(
                 chassis_activity = (
                     { 'type': CHASSIS_ACTIVITIES["DROPCHASSIS"], 'drop_yard': best_yard_for_termination }
                     if does_last_event_have_chassis
-                    else { 'type': CHASSIS_ACTIVITIES["HOOKCHASSIS"], 'hook_yard': best_yard_for_pickup }
+                    else { 'type': CHASSIS_ACTIVITIES["HOOKCHASSIS"], 'hook_yard': nearest_yard_for_chassis or best_yard_for_pickup, 'chassis': destination.get('chassis') }
                 )
 
                 additional_chassis_activity.append(chassis_activity)
+            else:
+                if end_type == 'DROPCONTAINER':
+                    return { 'type': CHASSIS_ACTIVITIES["NO_ACTION"] }
             
             if additional_chassis_activity:
                 if len(additional_chassis_activity) == 1:
@@ -293,7 +305,8 @@ def get_chassis_activity_between_moves(
                     return {
                         'type': CHASSIS_ACTIVITIES["DROP_AND_HOOK_CHASSIS"],
                         'drop_yard': next(activity for activity in additional_chassis_activity if activity.get('drop_yard')).get('drop_yard'),
-                        'hook_yard': next(activity for activity in additional_chassis_activity if activity.get('hook_yard')).get('hook_yard')
+                        'hook_yard': next(activity for activity in additional_chassis_activity if activity.get('hook_yard')).get('hook_yard'),
+                        'chassis': destination.get('chassis')
                     }
 
             # if connected move, then chassis activity is required if the destination is a yard
@@ -319,12 +332,34 @@ def get_chassis_activity_between_moves(
                 if not source_chassis or not dest_chassis:
                     return { 'type': CHASSIS_ACTIVITIES["NO_ACTION"] }
 
+                source_pre_populated_chassis = source.get('chassis')
+
+                if source_pre_populated_chassis:
+                    is_compatible_chassis = next((
+                        e for e in equipment_validations if 
+                        e.get('containerSize') == dest_container_size and 
+                        e.get('containerType') == dest_container_type and 
+                        e.get('chassisSize') == source_pre_populated_chassis[0] and 
+                        e.get('chassisType') == source_pre_populated_chassis[1]
+                    ), None)
+
+                    if is_compatible_chassis:
+                        return { 'type': CHASSIS_ACTIVITIES["NO_ACTION"] }
+                    else:
+                        return {
+                            'type': CHASSIS_ACTIVITIES["DROP_AND_HOOK_CHASSIS"],
+                            'drop_yard': best_yard_for_termination,
+                            'hook_yard': nearest_yard_for_chassis or best_yard_for_pickup,
+                            'chassis': destination.get('chassis')
+                        }
+
                 # if there is no common chassis in source and dest, then chassis activity is required
                 if not any(chassis in source_chassis for chassis in dest_chassis):
                     return {
                         'type': CHASSIS_ACTIVITIES["DROP_AND_HOOK_CHASSIS"],
                         'drop_yard': best_yard_for_termination,
-                        'hook_yard': best_yard_for_pickup
+                        'hook_yard': best_yard_for_pickup,
+                        'chassis': destination.get('chassis')
                     }
 
         return { 'type': CHASSIS_ACTIVITIES["NO_ACTION"] }
@@ -430,6 +465,7 @@ def get_chassis_event_for_nodes(previous_node, current_node, yard_locations, dis
     try:
         if current_node.get('chassis_activity') == CHASSIS_ACTIVITIES["HOOKCHASSIS"]:
             current_node['chassis_pick_event'] = get_chassis_event('CHASSISPICK', current_node.get('hook_yard'))
+            current_node['chassis_pick_event']['chassis'] = current_node.get('chassis')
             # distance = calculate_distance_between_locations(
             #     current_node['chassis_pick_event']['end_loc'],
             #     current_node['start_loc'],
@@ -550,3 +586,49 @@ def is_move_empty_with_constraint(is_empty_move: bool, constraint_type: str) -> 
         return True
     
     return False
+
+def generated_criteria(
+    plan_branch: list = None,
+    shift: any = None,
+    reference_numbers: list = None,
+    driver_tags: list = None,
+    route_type: str = None,
+    plan_date: 'datetime' = None
+):
+    driver_criteria = {}
+    load_criteria = {}
+
+    if plan_branch is not None and len(plan_branch) > 0:
+        load_criteria['plan_branch'] = plan_branch
+        driver_criteria['plan_branch'] = plan_branch
+
+    if shift is not None:
+        load_criteria['shift'] = shift
+
+    if reference_numbers is not None and len(reference_numbers) > 0:
+        load_criteria['reference_numbers'] = reference_numbers
+
+    if route_type is not None and len(route_type) > 0:
+        load_criteria['route_type'] = route_type
+
+    if driver_tags is not None and len(driver_tags) > 0:
+        driver_criteria['driver_tags'] = driver_tags
+
+    if plan_date is not None:
+        load_criteria['plan_date'] = plan_date
+        driver_criteria['plan_date'] = plan_date
+
+    return driver_criteria, load_criteria
+
+ZONE_MAP = {
+    'local': { 'min': 0, 'max': 30 },
+    'medium': { 'min': 31, 'max': 80 },
+    'outofzone': { 'min': 81, 'max': 150 },
+    'longhaul': { 'min': 151, 'max': 9999 },
+}
+
+def get_zone_from_distance(distance: int) -> int:
+    for zone, zone_data in ZONE_MAP.items():
+        if distance >= zone_data['min'] and distance <= zone_data['max']:
+            return zone
+    return 'longhaul'

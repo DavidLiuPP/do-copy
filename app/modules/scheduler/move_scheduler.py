@@ -183,94 +183,101 @@ def map_optimal_move_plan_to_recommended_moves(
             if not load_details or not load_details.get("driverOrder"):
                 continue
 
-            moves = get_moves_from_driver_order(load_details["driverOrder"], { 'exclude_void_out': True, 'exclude_combined_move': True })
+            moves = get_moves_from_driver_order(load_details["driverOrder"], { 'exclude_void_out': True })
             if not len(moves):
                 continue
 
             is_reposition_move = optimal_move['predicted_next_move'] == 'Reposition'
             actionable_profile_types = ACTIONABLE_PROFILE_TYPES.get(optimal_move['predicted_next_move'], [])
 
-            current_move = next(
-                (move for move in moves 
-                 if (not is_reposition_move and 
-                     any(event.get('type') in actionable_profile_types for event in move))
-                 or (is_reposition_move and 
-                     any(event.get('type') in actionable_profile_types and 
-                         event.get('prevType') == 'DELIVERLOAD' for event in move) and 
-                     not any(event.get('type') in VALID_EVENT_TYPES 
-                            for event in move))),
-                None
-            )
-
-            if not current_move:
-                continue
-
-            for profile_type in actionable_profile_types:
-                # Find valid event from current move
-                valid_event = next(
-                    (event for event in current_move 
-                    if event.get("type") == profile_type),
+            try:
+                current_move = next(
+                    (move for move in moves 
+                     if (not is_reposition_move and 
+                         any(event.get('type') in actionable_profile_types for event in move))
+                     or (is_reposition_move and 
+                         any(event.get('type') in actionable_profile_types and 
+                             event.get('prevType') == 'DELIVERLOAD' for event in move) and 
+                         not any(event.get('type') in VALID_EVENT_TYPES 
+                                for event in move))),
                     None
                 )
-            
-                if not valid_event:
+
+                if not current_move:
                     continue
 
-                actual_appointment_from = None
-                actual_appointment_to = None
+                for profile_type in actionable_profile_types:
+                    try:
+                        # Find valid event from current move
+                        valid_event = next(
+                            (event for event in current_move 
+                            if event.get("type") == profile_type),
+                            None
+                        )
+                    
+                        if not valid_event:
+                            continue
 
-                if profile_type == "PULLCONTAINER":
-                    actual_appointment_from = load_details.get('pickupFromTime', None) or (load_details.get("pickupTimes", [{}])[0].get("pickupFromTime") if load_details.get("pickupTimes") else None)
-                    actual_appointment_to = load_details.get('pickupToTime', None) or (load_details.get("pickupTimes", [{}])[0].get("pickupToTime") if load_details.get("pickupTimes") else None)
-                elif profile_type == "DELIVERLOAD":
-                    actual_appointment_from = load_details.get('deliveryFromTime', None) or (load_details.get("deliveryTimes", [{}])[0].get("deliveryFromTime") if load_details.get("deliveryTimes") else None)
-                    actual_appointment_to = load_details.get('deliveryToTime', None) or (load_details.get("deliveryTimes", [{}])[0].get("deliveryToTime") if load_details.get("deliveryTimes") else None)
-                elif profile_type == "RETURNCONTAINER":
-                    actual_appointment_from = load_details.get("returnFromTime") if load_details.get("returnFromTime") else None
-                    actual_appointment_to = load_details.get("returnToTime") if load_details.get("returnToTime") else None
-                
-                # Default 1 hour appointment window
-                recommended_appointment_from = converted_plan_date.isoformat()
-                recommended_appointment_to = (converted_plan_date + timedelta(hours=1)).isoformat()
+                        actual_appointment_from = None
+                        actual_appointment_to = None
 
-                if is_reposition_move:
-                    actual_appointment_from = datetime.fromisoformat(recommended_appointment_from).astimezone(pytz.UTC).isoformat()
-                    actual_appointment_to = (datetime.fromisoformat(recommended_appointment_from) + timedelta(days=1)).astimezone(pytz.UTC).isoformat()
-                
-                if actual_appointment_from:
-                    # Convert actual appointment times to carrier timezone while preserving exact time
-                    actual_from = datetime.fromisoformat(actual_appointment_from).replace(tzinfo=pytz.UTC).astimezone(tz)
-                    actual_to = datetime.fromisoformat(actual_appointment_to).replace(tzinfo=pytz.UTC).astimezone(tz)
+                        if profile_type == "PULLCONTAINER":
+                            actual_appointment_from = load_details.get('pickupFromTime', None) or (load_details.get("pickupTimes", [{}])[0].get("pickupFromTime") if load_details.get("pickupTimes") else None)
+                            actual_appointment_to = load_details.get('pickupToTime', None) or (load_details.get("pickupTimes", [{}])[0].get("pickupToTime") if load_details.get("pickupTimes") else None)
+                        elif profile_type == "DELIVERLOAD":
+                            actual_appointment_from = load_details.get('deliveryFromTime', None) or (load_details.get("deliveryTimes", [{}])[0].get("deliveryFromTime") if load_details.get("deliveryTimes") else None)
+                            actual_appointment_to = load_details.get('deliveryToTime', None) or (load_details.get("deliveryTimes", [{}])[0].get("deliveryToTime") if load_details.get("deliveryTimes") else None)
+                        elif profile_type == "RETURNCONTAINER":
+                            actual_appointment_from = load_details.get("returnFromTime") if load_details.get("returnFromTime") else None
+                            actual_appointment_to = load_details.get("returnToTime") if load_details.get("returnToTime") else None
+                        
+                        # Default 1 hour appointment window
+                        recommended_appointment_from = converted_plan_date.isoformat()
+                        recommended_appointment_to = (converted_plan_date + timedelta(hours=1)).isoformat()
 
-                    if actual_from.date() != converted_plan_date.date():
-                        break
+                        if is_reposition_move:
+                            actual_appointment_from = datetime.fromisoformat(recommended_appointment_from).astimezone(pytz.UTC).isoformat()
+                            actual_appointment_to = (datetime.fromisoformat(recommended_appointment_from) + timedelta(days=1)).astimezone(pytz.UTC).isoformat()
+                        
+                        if actual_appointment_from:
+                            # Convert actual appointment times to carrier timezone while preserving exact time
+                            actual_from = datetime.fromisoformat(actual_appointment_from).replace(tzinfo=pytz.UTC).astimezone(tz)
+                            actual_to = datetime.fromisoformat(actual_appointment_to).replace(tzinfo=pytz.UTC).astimezone(tz)
 
-                    # Use actual appointment window times while keeping the plan date
-                    recommended_appointment_from = converted_plan_date.replace(hour=actual_from.hour, minute=actual_from.minute).isoformat()
-                    recommended_appointment_to = converted_plan_date.replace(hour=actual_to.hour, minute=actual_to.minute).isoformat()
+                            if actual_from.date() != converted_plan_date.date():
+                                break
 
-                recommended_move = {
-                    "reference_number": optimal_move['reference_number'],
-                    "predicted_next_move": optimal_move['predicted_next_move'],
-                    "move_id": current_move[0].get('moveId'),
-                    "move": current_move,
-                    "profile_type": profile_type,
-                    "profile_id": valid_event.get("customerId") or None,
-                    "profile_name": valid_event.get("company_name") or None,
-                    "recommended_appointment_from": recommended_appointment_from,
-                    "recommended_appointment_to": recommended_appointment_to,
-                    "scheduled_appointment_from": actual_appointment_from,
-                    "scheduled_appointment_to": actual_appointment_to,
-                    "allEvents": [event for event in load_details.get('driverOrder', []) if not event.get('isVoidOut')],
-                    "lastFreeDay": load_details.get('lastFreeDay'),
-                    "containerAvailableDay": load_details.get('containerAvailableDay'),
-                    "plan_date": converted_plan_date.isoformat()
-                }
+                            # Use actual appointment window times while keeping the plan date
+                            recommended_appointment_from = converted_plan_date.replace(hour=actual_from.hour, minute=actual_from.minute).isoformat()
+                            recommended_appointment_to = converted_plan_date.replace(hour=actual_to.hour, minute=actual_to.minute).isoformat()
 
-                recommended_moves.append(recommended_move)
+                        recommended_move = {
+                            "reference_number": optimal_move['reference_number'],
+                            "predicted_next_move": optimal_move['predicted_next_move'],
+                            "move_id": current_move[0].get('moveId'),
+                            "move": current_move,
+                            "profile_type": profile_type,
+                            "profile_id": valid_event.get("customerId") or None,
+                            "profile_name": valid_event.get("company_name") or None,
+                            "recommended_appointment_from": recommended_appointment_from,
+                            "recommended_appointment_to": recommended_appointment_to,
+                            "scheduled_appointment_from": actual_appointment_from,
+                            "scheduled_appointment_to": actual_appointment_to,
+                            "allEvents": [event for event in load_details.get('driverOrder', []) if not event.get('isVoidOut')],
+                            "lastFreeDay": load_details.get('lastFreeDay'),
+                            "containerAvailableDay": load_details.get('containerAvailableDay'),
+                            "plan_date": converted_plan_date.isoformat()
+                        }
+
+                        recommended_moves.append(recommended_move)
+                    except Exception as e:
+                        logger.error(f"Error processing profile type {profile_type}: {str(e)}")
+                        continue
+            except Exception as e:
+                logger.error(f"Error processing move for reference number {optimal_move.get('reference_number')}: {str(e)}")
+                continue
 
         return recommended_moves
-
     except Exception as e:
         logger.error(f"Error mapping optimal move plan: {str(e)}")
         raise Exception(f"Failed to map optimal move plan: {str(e)}")
@@ -377,147 +384,151 @@ async def plan_loads_with_appointments_to_scheduler(
             event['customerId']
             for load in loads_with_appointments
             for event in load['driverOrder']
-            if event.get('customerId') and event.get('type') in ['PULLCONTAINER', 'DELIVERLOAD']
+            if event.get('customerId')
         ))
         location_office_hours = await get_office_hours(carrier, all_locations, timeZone)
         waiting_times_dict = await get_waiting_time(carrier, all_locations)
 
         for load in loads_with_appointments:
-            # Extract events and moves
-            driver_order = load.get('driverOrder', [])
-            events = {event.get('type'): event for event in driver_order if event.get('type') in actions.values() and isinstance(event, dict)}
+            try:
+                # Extract events and moves
+                driver_order = load.get('driverOrder', [])
+                events = {event.get('type'): event for event in driver_order if event.get('type') in actions.values() and isinstance(event, dict)}
 
-            moves = get_moves_from_driver_order(driver_order, {'exclude_void_out': True, 'exclude_combined_move': True})
+                moves = get_moves_from_driver_order(driver_order, {'exclude_void_out': True, 'exclude_combined_move': True})
 
-            move_positions = {}
-            for i, move in enumerate(moves):
-                for event in move:
-                    event_type = event.get('type')
-                    if event_type in actions.values():
-                        move_type = next(k for k,v in actions.items() if v == event_type)
-                        move_positions[move_type] = i
+                move_positions = {}
+                for i, move in enumerate(moves):
+                    for event in move:
+                        event_type = event.get('type')
+                        if event_type in actions.values():
+                            move_type = next(k for k,v in actions.items() if v == event_type)
+                            move_positions[move_type] = i
+                    
+                    is_reposition_move = all(event.get('type') not in actions.values() for event in move) and \
+                        any(event.get('type') in DROP_EVENT_TYPES and event.get('prevType') == 'DELIVERLOAD' and not event.get('departed') for event in move)
+                    if is_reposition_move:
+                        load['has_reposition_move'] = True
+
+                # Get recommended times in one pass
+                recommended_times = {}
+                planning_date = planning_week_dates[0]
+
+                for move_type in actions:
+                    from_time = datetime.fromisoformat(load.get(f'{move_type}FromTime')).astimezone(tz) if load.get(f'{move_type}FromTime') else None
+                    to_time = datetime.fromisoformat(load.get(f'{move_type}ToTime')).astimezone(tz) if load.get(f'{move_type}ToTime') else None
+
+                    # if difference between from and to time is more than 1 day
+                    if from_time and to_time:
+                        if (to_time - from_time).days > 1 and planning_date < to_time:
+                            # from time is from time or planning date whichever is greater
+                            from_time = max(from_time, planning_date)
+
+                    recommended_times[move_type] = from_time.isoformat() if from_time else None
+
+                # Calculate delivery time if only return time exists
+                if recommended_times.get('return') and events.get('DELIVERLOAD') and not recommended_times.get('delivery'):
+                    return_time = datetime.fromisoformat(recommended_times['return'])
+                    
+                    if move_positions.get('delivery') == move_positions.get('return'):
+                        # Ensure customerId is hashable (convert to string if needed)
+                        customer_id = str(events['DELIVERLOAD'].get('customerId', '')) if events['DELIVERLOAD'].get('customerId') is not None else ''
+                        loading_time = waiting_times_dict.get((customer_id, 'DELIVERLOAD', False), { 'waiting_time': 30 })
+                        duration = calculate_duration_from_routing_events(events, 'DELIVERLOAD', 'RETURNCONTAINER', distance_unit, loading_time.get('waiting_time'))
+
+                        delivery_office_hours = next((office_hour for office_hour in location_office_hours if office_hour['_id'] == customer_id), None)
+                        recommended_times['delivery'] = get_relative_appointment_time(recommended_times['return'], delivery_office_hours, duration, tz)
+                    else:
+                        recommended_times['delivery'] = (return_time - timedelta(days=1)).isoformat()
+
+                # Calculate pickup time if only delivery time exists
+                if recommended_times.get('delivery') and events.get('PULLCONTAINER') and not recommended_times.get('pickup'):
+                    delivery_time = datetime.fromisoformat(recommended_times['delivery'])
+                    
+                    if move_positions.get('pickup') == move_positions.get('delivery'):
+                        # Ensure customerId is hashable (convert to string if needed)
+                        customer_id = str(events['PULLCONTAINER'].get('customerId', '')) if events['PULLCONTAINER'].get('customerId') is not None else ''
+                        loading_time = waiting_times_dict.get((customer_id, 'PULLCONTAINER', False), { 'waiting_time': 30 })
+                        duration = calculate_duration_from_routing_events(events, 'PULLCONTAINER', 'DELIVERLOAD', distance_unit, loading_time.get('waiting_time'))
+
+                        pickup_office_hours = next((office_hour for office_hour in location_office_hours if office_hour['_id'] == customer_id), None)
+                        recommended_times['pickup'] = get_relative_appointment_time(recommended_times['delivery'], pickup_office_hours, duration, tz)
+                    else:
+                        recommended_times['pickup'] = (delivery_time - timedelta(days=1)).isoformat()
+                    
+                    last_free_day = datetime.fromisoformat(load.get('lastFreeDay')) if load.get('lastFreeDay') else None
+                    if last_free_day and last_free_day >= planning_week_dates[0] and last_free_day < datetime.fromisoformat(recommended_times['pickup']):
+                        recommended_times['pickup'] = last_free_day.isoformat()
+
+                if recommended_times.get('pickup') and events.get('DELIVERLOAD') and not recommended_times.get('delivery'):
+                    if move_positions.get('pickup') == move_positions.get('delivery'):
+                        recommended_times['delivery'] = recommended_times['pickup']
                 
-                is_reposition_move = all(event.get('type') not in actions.values() for event in move) and \
-                    any(event.get('type') in DROP_EVENT_TYPES and event.get('prevType') == 'DELIVERLOAD' and not event.get('departed') for event in move)
-                if is_reposition_move:
-                    load['has_reposition_move'] = True
-
-            # Get recommended times in one pass
-            recommended_times = {}
-            planning_date = planning_week_dates[0]
-
-            for move_type in actions:
-                from_time = datetime.fromisoformat(load.get(f'{move_type}FromTime')).astimezone(tz) if load.get(f'{move_type}FromTime') else None
-                to_time = datetime.fromisoformat(load.get(f'{move_type}ToTime')).astimezone(tz) if load.get(f'{move_type}ToTime') else None
-
-                # if difference between from and to time is more than 1 day
-                if from_time and to_time:
-                    if (to_time - from_time).days > 1 and planning_date < to_time:
-                        # from time is from time or planning date whichever is greater
-                        from_time = max(from_time, planning_date)
-
-                recommended_times[move_type] = from_time.isoformat() if from_time else None
-
-            # Calculate delivery time if only return time exists
-            if recommended_times.get('return') and events.get('DELIVERLOAD') and not recommended_times.get('delivery'):
-                return_time = datetime.fromisoformat(recommended_times['return'])
+                if recommended_times.get('delivery') and events.get('RETURNCONTAINER') and not recommended_times.get('return'):
+                    if move_positions.get('delivery') == move_positions.get('return'):
+                        recommended_times['return'] = recommended_times['delivery']
+                    else: 
+                        recommended_times['return'] = max(
+                            planning_week_dates[0],
+                            datetime.fromisoformat(recommended_times['delivery']) + timedelta(days=1)
+                        ).isoformat()
                 
-                if move_positions.get('delivery') == move_positions.get('return'):
-                    # Ensure customerId is hashable (convert to string if needed)
-                    customer_id = str(events['DELIVERLOAD'].get('customerId', '')) if events['DELIVERLOAD'].get('customerId') is not None else ''
-                    loading_time = waiting_times_dict.get((customer_id, 'DELIVERLOAD', False), { 'waiting_time': 30 })
-                    duration = calculate_duration_from_routing_events(events, 'DELIVERLOAD', 'RETURNCONTAINER', distance_unit, loading_time.get('waiting_time'))
-
-                    delivery_office_hours = next((office_hour for office_hour in location_office_hours if office_hour['_id'] == customer_id), None)
-                    recommended_times['delivery'] = get_relative_appointment_time(recommended_times['return'], delivery_office_hours, duration, tz)
-                else:
-                    recommended_times['delivery'] = (return_time - timedelta(days=1)).isoformat()
-
-            # Calculate pickup time if only delivery time exists
-            if recommended_times.get('delivery') and events.get('PULLCONTAINER') and not recommended_times.get('pickup'):
-                delivery_time = datetime.fromisoformat(recommended_times['delivery'])
+                # this is for dile customer
+                if not recommended_times.get('pickup') and not "delivery" in move_positions and not recommended_times.get('return') and "return" in move_positions:
+                    if ("pickup" in move_positions and move_positions.get('return') == move_positions.get('pickup')) or not "pickup" in move_positions:
+                        recommended_times['return'] = planning_week_dates[0].isoformat()
                 
-                if move_positions.get('pickup') == move_positions.get('delivery'):
-                    # Ensure customerId is hashable (convert to string if needed)
-                    customer_id = str(events['PULLCONTAINER'].get('customerId', '')) if events['PULLCONTAINER'].get('customerId') is not None else ''
-                    loading_time = waiting_times_dict.get((customer_id, 'PULLCONTAINER', False), { 'waiting_time': 30 })
-                    duration = calculate_duration_from_routing_events(events, 'PULLCONTAINER', 'DELIVERLOAD', distance_unit, loading_time.get('waiting_time'))
-
-                    pickup_office_hours = next((office_hour for office_hour in location_office_hours if office_hour['_id'] == customer_id), None)
-                    recommended_times['pickup'] = get_relative_appointment_time(recommended_times['delivery'], pickup_office_hours, duration, tz)
-                else:
-                    recommended_times['pickup'] = (delivery_time - timedelta(days=1)).isoformat()
-                
-                last_free_day = datetime.fromisoformat(load.get('lastFreeDay')) if load.get('lastFreeDay') else None
-                if last_free_day and last_free_day >= planning_week_dates[0] and last_free_day < datetime.fromisoformat(recommended_times['pickup']):
-                    recommended_times['pickup'] = last_free_day.isoformat()
-
-            if recommended_times.get('pickup') and events.get('DELIVERLOAD') and not recommended_times.get('delivery'):
-                if move_positions.get('pickup') == move_positions.get('delivery'):
-                    recommended_times['delivery'] = recommended_times['pickup']
-            
-            if recommended_times.get('delivery') and events.get('RETURNCONTAINER') and not recommended_times.get('return'):
-                if move_positions.get('delivery') == move_positions.get('return'):
-                    recommended_times['return'] = recommended_times['delivery']
-                else: 
-                    recommended_times['return'] = max(
+                # this is for reposition move
+                if load.get('has_reposition_move') and recommended_times.get('delivery'):
+                    drop_date = max(
                         planning_week_dates[0],
                         datetime.fromisoformat(recommended_times['delivery']) + timedelta(days=1)
                     ).isoformat()
-            
-            # this is for dile customer
-            if not recommended_times.get('pickup') and not "delivery" in move_positions and not recommended_times.get('return') and "return" in move_positions:
-                if ("pickup" in move_positions and move_positions.get('return') == move_positions.get('pickup')) or not "pickup" in move_positions:
-                    recommended_times['return'] = planning_week_dates[0].isoformat()
-            
-            # this is for reposition move
-            if load.get('has_reposition_move') and recommended_times.get('delivery'):
-                drop_date = max(
-                    planning_week_dates[0],
-                    datetime.fromisoformat(recommended_times['delivery']) + timedelta(days=1)
-                ).isoformat()
 
-                if datetime.fromisoformat(drop_date) < planning_week_dates[-1] + timedelta(days=1):
-                    optimal_plan_for_scheduled_moves.append({
-                        'reference_number': load.get('reference_number'),
-                        'current_load_type': 'scheduled',
-                        'predicted_next_move': 'Reposition',
-                        'plan_date': datetime.fromisoformat(drop_date).astimezone(tz).strftime('%Y-%m-%d')
-                    })
-                    assumed_return_date = datetime.fromisoformat(drop_date) + timedelta(days=1)
-                    if recommended_times.get('return') and assumed_return_date > datetime.fromisoformat(recommended_times['return']):
-                        recommended_times['return'] = assumed_return_date.isoformat()
-
-            last_action_date = None
-            for move_type in actions.keys():
-                if recommended_times.get(move_type):
-                    if planning_week_dates[0] <= datetime.fromisoformat(recommended_times[move_type]) < planning_week_dates[-1] + timedelta(days=1):
+                    if datetime.fromisoformat(drop_date) < planning_week_dates[-1] + timedelta(days=1):
                         optimal_plan_for_scheduled_moves.append({
                             'reference_number': load.get('reference_number'),
                             'current_load_type': 'scheduled',
-                            'predicted_next_move': prediction_lables[move_type],
-                            'plan_date': datetime.fromisoformat(recommended_times[move_type]).astimezone(tz).strftime('%Y-%m-%d')
+                            'predicted_next_move': 'Reposition',
+                            'plan_date': datetime.fromisoformat(drop_date).astimezone(tz).strftime('%Y-%m-%d')
                         })
-                    last_action_date = datetime.fromisoformat(recommended_times[move_type])
-                elif get_partially_planned_moves:
-                    plan_date = max(planning_week_dates[0], last_action_date) if last_action_date else planning_week_dates[0]
+                        assumed_return_date = datetime.fromisoformat(drop_date) + timedelta(days=1)
+                        if recommended_times.get('return') and assumed_return_date > datetime.fromisoformat(recommended_times['return']):
+                            recommended_times['return'] = assumed_return_date.isoformat()
 
-                    # plan the next move for the load on next day
-                    weekdate_index = next((i for i, date in enumerate(planning_week_dates) if date.astimezone(tz).date() == plan_date.astimezone(tz).date()), None)
-                    if weekdate_index is not None and weekdate_index + 1 < len(planning_week_dates):
-                        plan_date = planning_week_dates[weekdate_index + 1]
+                last_action_date = None
+                for move_type in actions.keys():
+                    if recommended_times.get(move_type):
+                        if planning_week_dates[0] <= datetime.fromisoformat(recommended_times[move_type]) < planning_week_dates[-1] + timedelta(days=1):
+                            optimal_plan_for_scheduled_moves.append({
+                                'reference_number': load.get('reference_number'),
+                                'current_load_type': 'scheduled',
+                                'predicted_next_move': prediction_lables[move_type],
+                                'plan_date': datetime.fromisoformat(recommended_times[move_type]).astimezone(tz).strftime('%Y-%m-%d')
+                            })
+                        last_action_date = datetime.fromisoformat(recommended_times[move_type])
+                    elif get_partially_planned_moves:
+                        plan_date = max(planning_week_dates[0], last_action_date) if last_action_date else planning_week_dates[0]
 
-                    partially_planned_moves.append({
-                        'reference_number': load.get('reference_number'),
-                        'next_move': actions[move_type],
-                        'plan_date': plan_date.astimezone(tz).strftime('%Y-%m-%d')
-                    })
-                    break
-                else:
-                    continue
+                        # plan the next move for the load on next day
+                        weekdate_index = next((i for i, date in enumerate(planning_week_dates) if date.astimezone(tz).date() == plan_date.astimezone(tz).date()), None)
+                        if weekdate_index is not None and weekdate_index + 1 < len(planning_week_dates):
+                            plan_date = planning_week_dates[weekdate_index + 1]
+
+                        partially_planned_moves.append({
+                            'reference_number': load.get('reference_number'),
+                            'next_move': actions[move_type],
+                            'plan_date': plan_date.astimezone(tz).strftime('%Y-%m-%d')
+                        })
+                        break
+                    else:
+                        continue
+
+            except Exception as e:
+                logger.error(f"Error planning loads with appointments to scheduler: {str(e)}")
+                continue
 
         return optimal_plan_for_scheduled_moves, partially_planned_moves
-    
     except Exception as e:
         logger.error(f"Error planning loads with appointments to scheduler: {str(e)}")
         raise Exception(f"Failed to plan loads with appointments to scheduler: {str(e)}")
@@ -715,7 +726,7 @@ async def predict_next_move(user_payload: Dict[str, Any], plan_date: str, option
         )
         
         # Fetch and transform loads
-        loads = await get_active_loads(carrier, limit=2000)
+        loads = await get_active_loads(carrier, load_criteria={}, limit=2000)
         if not loads:
             logger.info(f"No available loads found for carrier {carrier}")
             return {
@@ -796,6 +807,7 @@ def load_update_action_validate(old_load: Dict[str, Any], load: Dict[str, Any]) 
             'containerAvailableDay',
             'cutOff',
             'appointmentNo',
+            'callerPONo',
         ]
         if load.get('type_of_load') == 'IMPORT':
             other_related_fields.append('containerNo')
@@ -920,11 +932,9 @@ async def replan_modified_move(carrier: str, action: str, load_payload: Dict[str
 
 async def retrieve_scheduled_moves_for_optimizer(
     user_payload: Dict[str, Any],
-    plan_branch: list,
-    converted_plan_date: datetime,
+    load_criteria: Dict[str, Any],
     plan_from_time: datetime,
     plan_to_time: datetime,
-    shift: str = None
 ):
     try:
         carrier = user_payload.get('carrier')
@@ -932,9 +942,9 @@ async def retrieve_scheduled_moves_for_optimizer(
 
         scheduled_loads = await get_active_loads(
             carrier,
+            load_criteria,
             2000,
-            plan_branch,
-            { "ignored_pending_loads": True }
+            { "ignored_pending_loads": True },
         )
 
         # filter scheduled loads if type_of_loads is IMPORT then containerNo should be present
@@ -946,12 +956,12 @@ async def retrieve_scheduled_moves_for_optimizer(
         
         mapped_loads = map_loads_for_scheduler(scheduled_loads)
         
-        formatted_plan_date = converted_plan_date.astimezone(pytz.timezone(timeZone)).strftime('%Y-%m-%d')
+        formatted_plan_date = load_criteria.get('plan_date').astimezone(pytz.timezone(timeZone)).strftime('%Y-%m-%d')
         mapped_loads = await add_recommended_returns(user_payload, formatted_plan_date, mapped_loads)
 
-        planning_week_dates = [converted_plan_date]
-        if shift:
-            planning_week_dates.append(converted_plan_date + timedelta(days=1))
+        planning_week_dates = [load_criteria.get('plan_date')]
+        if load_criteria.get('shift'):
+            planning_week_dates.append(load_criteria.get('plan_date') + timedelta(days=1))
         
         scheduled_loads, _ = await plan_loads_with_appointments_to_scheduler(
             user_payload=user_payload,
@@ -962,13 +972,13 @@ async def retrieve_scheduled_moves_for_optimizer(
         scheduled_plans = map_optimal_move_plan_to_recommended_moves(
             optimal_move_plan=scheduled_loads,
             loads=mapped_loads,
-            converted_plan_date=converted_plan_date,
+            converted_plan_date=load_criteria.get('plan_date'),
             timeZone=timeZone
         )
 
         scheduled_plans = check_optimal_move_plan(scheduled_plans)
 
-        if shift:
+        if load_criteria.get('shift'):
             scheduled_plans = [
                 move for move in scheduled_plans
                 if move.get('scheduled_appointment_from') and 

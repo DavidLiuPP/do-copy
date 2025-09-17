@@ -50,9 +50,13 @@ async def get_waiting_time(carrier: str, customer_ids: List[str]) -> Dict[str, A
                 avg_wait = int(total / 7)
                 
                 # Ensure all key components are hashable (convert to string if needed)
-                customer_id = str(wt['customer_id']) if wt['customer_id'] is not None else ''
-                event_type = str(wt['type']) if wt['type'] is not None else ''
-                is_liveunload = bool(wt['is_liveunload']) if wt['is_liveunload'] is not None else False
+                try:
+                    customer_id = str(wt['customer_id']) if wt['customer_id'] is not None else ''
+                    event_type = str(wt['type']) if wt['type'] is not None else ''
+                    is_liveunload = bool(wt['is_liveunload']) if wt['is_liveunload'] is not None else False
+                except (TypeError, ValueError) as e:
+                    logger.error(f"Error processing waiting time record: {str(e)}")
+                    continue
                 
                 waiting_time_dict[(customer_id, event_type, is_liveunload)] = {
                     'waiting_time': avg_wait,
@@ -60,7 +64,7 @@ async def get_waiting_time(carrier: str, customer_ids: List[str]) -> Dict[str, A
                 }
 
             return waiting_time_dict
-            
+
     except Exception as e:
         logger.error(f"Error retrieving waiting times from database: {str(e)}")
         raise
@@ -74,18 +78,31 @@ def add_waiting_time_to_move(loads: Dict[str, Any], waiting_times: Dict[str, Any
                 customer_id = event.get('customerId')
                 event_type = event.get('type')
 
+                # Skip waiting time for consecutive events with the same customerId
                 if indx > 0 and customer_id == move[indx - 1].get('customerId'):
                     move[indx]['waiting_time'] = 0
                     continue
+                
+                customer_wait_times = waiting_times.get((customer_id, event_type, False), None)
 
-                customer_wait_times = waiting_times.get((customer_id, event_type, False), {'waiting_time': 60})
+                # If not found in the dictionary, fallback to default waiting time based on event type
+                if customer_wait_times is None:
+                    if event_type in ['PULLCONTAINER', 'DELIVERLOAD', 'RETURNCONTAINER']:
+                        customer_wait_times = {'waiting_time': 60}
+                    else:
+                        customer_wait_times = {'waiting_time': 15}
+
+                # Handle live unload case
                 if event.get('is_liveunload'):
                     customer_wait_times = waiting_times.get((customer_id, event_type, True), customer_wait_times)
-                
+
+                # Assign waiting time and hourly distribution to the event
                 move[indx]['waiting_time'] = customer_wait_times.get('waiting_time', 60)
                 move[indx]['waiting_time_distribution'] = customer_wait_times.get('hourly_distribution', {})
 
+            # Calculate total waiting time for the load
             total_waiting_time = sum(event.get('waiting_time', 0) for event in move)
+            # Update the load with total waiting time and modified moves
             load['move'] = move
             load['waiting_time'] = total_waiting_time
         

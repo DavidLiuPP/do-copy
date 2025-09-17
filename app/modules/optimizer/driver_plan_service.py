@@ -96,6 +96,8 @@ async def save_plan_details(
     plan_branch = [],
     shift = None,
     background_tasks: BackgroundTasks = None,
+    driver_tags = [],
+    route_type = []
 ):
     # Save Summary of optimal_plan to optimizer_plans
 
@@ -110,7 +112,9 @@ async def save_plan_details(
             latest_version=latest_version,
             converted_plan_date=converted_plan_date,
             plan_branch=plan_branch,
-            shift=shift
+            shift=shift,
+            driver_tags=driver_tags,
+            route_type=route_type
         )
         plan_id = summary_of_optimal_plan.get('id', None)
     except Exception as e:

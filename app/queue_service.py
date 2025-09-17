@@ -175,7 +175,7 @@ class EventService:
 
             carrier_settings = await get_carrier_settings(userId)
 
-            if carrier_settings and carrier_settings.get('isDispatchAutomationEnabled', False):
+            if carrier_settings and carrier_settings.get('isSchedulerEnabled', False):
                 await replan_modified_move(
                     userId,
                     routing_key,

@@ -16,7 +16,6 @@ VALID_X_API_KEY_PATHS = [
     "/set_default_yard_location",
     "/v1/get_driver_plan_stats",
     "/upload_waiting_time",
-    "/upload_driver_features",
     "/v1/update_db"
 ]
 

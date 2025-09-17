@@ -7,7 +7,7 @@ SKIP_NODE_PENALTY = 2000
 SKIP_NODE_PENALTY_FOR_OPTIONAL_MOVE = 1000
 ADDITIONAL_PENALTY_FOR_ASSIGNED_MOVE = 2000
 PENALTY_FOR_EARLY_INVOCATION = 1
-VEHICLE_USE_PENALTY = 100
+VEHICLE_USE_PENALTY = 50
 PENALTY_FOR_EMPTY_MILES = 10
 MAX_EMPTY_MILES = 30
 BUFFER_TIME_FOR_NEXT_NODE = 10 # in minutes
@@ -17,7 +17,9 @@ MAXIMIZE_WORKING_MINUTES = True
 MAX_WAITING_TIME_BETWEEN_NODES = 60  # in minutes
 PENALTY_FOR_COMPANY_DRIVER_LONG_DISTANCE_MOVE = 0
 
-LATE_ARRIVAL_MINUTES = 120
+LATE_ARRIVAL_MINUTES = 181
+
+MAX_OWNER_SCORE = 5
 
 # Default VRP assumptions
 DEFAULT_VRP_ASSUMPTIONS = {
@@ -47,15 +49,17 @@ def get_carrier_vrp_assumptions(carrier_id: str = None) -> dict:
     Returns:
         Dictionary containing the VRP assumptions for the carrier
     """
+    assumptions = DEFAULT_VRP_ASSUMPTIONS
     if carrier_id and carrier_id in CARRIER_CONFIGS:
         carrier_config = CARRIER_CONFIGS[carrier_id]
         if 'vrp_assumptions' in carrier_config:
             # Merge default assumptions with carrier-specific ones
             assumptions = DEFAULT_VRP_ASSUMPTIONS.copy()
             assumptions.update(carrier_config['vrp_assumptions'])
-            return assumptions
-    
-    return DEFAULT_VRP_ASSUMPTIONS
+
+    assumptions['PENALTY_FOR_LATE_START'] = round((3 * assumptions['SKIP_NODE_PENALTY']) * (1 / 30)) # Allow being late upto 30 mins if 3 loads can be done.
+
+    return assumptions
 
 CHASSIS_ACTIVITIES = {
     "NO_ACTION": "NO_ACTION",
@@ -210,4 +214,12 @@ VRP_ALGORITHMS = {
     # ASSIGN_MIN_VALUE (cf. constraint_solver.h).
     # """
     "FIRST_UNBOUND_MIN_VALUE": routing_enums_pb2.FirstSolutionStrategy.FIRST_UNBOUND_MIN_VALUE,
+}
+
+VRP_METAHEURISTICS = {
+    # """Uses guided local search to escape local minima
+    # (cf. http://en.wikipedia.org/wiki/Guided_Local_Search); this is generally
+    # the most efficient metaheuristic for vehicle routing.
+    # """
+    "GUIDED_LOCAL_SEARCH": routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
 }

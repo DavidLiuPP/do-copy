@@ -514,17 +514,8 @@ async def generate_sanity_check_data(plan_date: str, version: int, carrier: str)
         # Get the Excel data from the buffer
         excel_buffer.seek(0)
         excel_data = excel_buffer.getvalue()
-        carrier_map = {
-            '63039f613d347315e2a02a2d': 'TriPoint',
-            '653a6813f7eb901615236816': 'QualityContainer',
-            '641a10875b159a160742327e': 'RoadEx',
-            '6478bad770a34316adb76c24': 'AlphaCargo',
-            '623a1a0ae85bec6eacd5096d': 'DileTrucking',
-            '5a39472b4a819b31e9496084': 'Loyalty'
-        }
-        carrier_name = carrier_map.get(carrier, carrier)
         
-        excel_filename = f"sanity_check_{carrier_name}_{plan_date}_{version}.xlsx"
+        excel_filename = f"sanity_check_{plan_date}_{version}.xlsx"
         logger.info(f"Generated in-memory Excel file: {excel_filename}")
         return dfs, excel_data, excel_filename
 
@@ -565,7 +556,8 @@ async def send_email(excel_data: bytes, excel_filename: str, plan_date: str, car
             '641a10875b159a160742327e': 'RoadEx',
             '6478bad770a34316adb76c24': 'AlphaCargo',
             '623a1a0ae85bec6eacd5096d': 'DileTrucking',
-            '5a39472b4a819b31e9496084': 'Loyalty'
+            '5a39472b4a819b31e9496084': 'Loyalty',
+            '6500ac3f5b4e7715cea4a2fe': 'Seaport'
         }
         
         # Use the carrier map to get the readable name, or use the original ID if not found
@@ -653,7 +645,12 @@ async def run_sanity_check_automation(plan_date: str, version: int, carrier: str
         carrier (str): The carrier ID
     """
     # Skip sanity check for specific carrier
-    if carrier == "67bd6724758c40d7df2ac360" or carrier == "6786a36700956c1a792163f5":
+    test_carriers = [
+        "67bd6724758c40d7df2ac360",
+        "6786a36700956c1a792163f5",
+        "64c80990fb1d4b4a3dbd6907"
+    ]
+    if carrier in test_carriers:
         logger.info(f"Skipping sanity check automation for carrier {carrier} because it is a test carrier")
         return
     

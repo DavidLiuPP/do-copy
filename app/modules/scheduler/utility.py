@@ -2,6 +2,7 @@ import logging
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
+import json
 
 from app.firebase_connection import get_firebase_client
 from app.modules.scheduler.constants import REQUIRED_LOAD_FIELDS, OPTIONAL_LOAD_FIELDS, APPOINTMENT_STATUS
@@ -102,81 +103,85 @@ def map_loads_for_scheduler(loads: List[Dict[str, Any]]) -> List[Dict[str, Any]]
 
     try:
         transformed_loads = []
-
         for load in loads:
-            # Validate required fields
-            missing_fields = REQUIRED_LOAD_FIELDS - set(load.keys())
-            if missing_fields:
-                raise ValueError(f"Load missing required fields: {missing_fields}")
+            try: 
+                # Validate required fields
+                missing_fields = REQUIRED_LOAD_FIELDS - set(load.keys())
+                if missing_fields:
+                    logger.error(f"Load missing required fields: {missing_fields}")
+                    continue
 
-            # Create deep copy to avoid modifying original
-            load_copy = deepcopy(load)
-            
-            # Remove carrier field
-            load_copy.pop('carrier', None)
+                # Create deep copy to avoid modifying original
+                load_copy = deepcopy(load)
                 
-            # Extract and update times
-            pickup_times = _extract_pickup_times(load_copy)
-            delivery_times = _extract_delivery_times(load_copy)
-            load_copy.update(pickup_times)
-            load_copy.update(delivery_times)
+                # Remove carrier field
+                load_copy.pop('carrier', None)
+                    
+                # Extract and update times
+                pickup_times = _extract_pickup_times(load_copy)
+                delivery_times = _extract_delivery_times(load_copy)
+                load_copy.update(pickup_times)
+                load_copy.update(delivery_times)
 
-            if load_copy.get('returnFromTime') and not load_copy.get('returnToTime'):
-                load_copy['returnToTime'] = load_copy['returnFromTime']
-            
-            # Remove original time fields
-            load_copy.pop('pickupTimes', None)
-            load_copy.pop('deliveryTimes', None)
+                if load_copy.get('returnFromTime') and not load_copy.get('returnToTime'):
+                    load_copy['returnToTime'] = load_copy['returnFromTime']
+                
+                # Remove original time fields
+                load_copy.pop('pickupTimes', None)
+                load_copy.pop('deliveryTimes', None)
 
-            # Standardize distance field
-            load_copy['distance'] = load_copy.pop('totalMiles', 0)
-            load_copy['revenue'] = load_copy.pop('revenue', 0)
-            
-            # Fields to pop with default None value
-            fields_to_pop = [
-                'availableDate', 'shipperName', 'consigneeName', 'emptyOriginName',
-                'hazmat', 'hot', 'liquor', 'lastFreeDay', 'containerAvailableDay', 'emptyDay',
-                'returnFromTime', 'returnToTime', 'dischargedDate', 'cutOff', 'freeReturnDate',
-                'containerSizeName', 'totalWeight', 'outgateDate', 'chassisPickName',
-                'consigneeAddress', 'containerTypeName', 'containerOwnerName',
-                'caller', 'freight', 'isLive', 'isReUse', 'isReadyForPickup',
-                'isHot', 'overWeight', 'allowDriverCompletion', 'isLastFreeDay', 'appointmentNo'
-            ]
+                # Standardize distance field
+                load_copy['distance'] = load_copy.pop('totalMiles', 0)
+                load_copy['revenue'] = load_copy.pop('revenue', 0)
+                
+                # Fields to pop with default None value
+                fields_to_pop = [
+                    'availableDate', 'shipperName', 'consigneeName', 'emptyOriginName',
+                    'hazmat', 'hot', 'liquor', 'lastFreeDay', 'containerAvailableDay', 'emptyDay',
+                    'returnFromTime', 'returnToTime', 'dischargedDate', 'cutOff', 'freeReturnDate',
+                    'containerSizeName', 'totalWeight', 'outgateDate', 'chassisPickName',
+                    'consigneeAddress', 'containerTypeName', 'containerOwnerName',
+                    'caller', 'freight', 'isLive', 'isReUse', 'isReadyForPickup',
+                    'isHot', 'overWeight', 'allowDriverCompletion', 'isLastFreeDay', 'appointmentNo', 'callerPONo'
+                ]
 
-            for field in fields_to_pop:
-                load_copy[field] = load_copy.pop(field, None)
+                for field in fields_to_pop:
+                    load_copy[field] = load_copy.pop(field, None)
 
-            vessel = load_copy.pop('vessel', None)
-            load_copy['vessel'] = vessel.get('eta') if vessel else None
+                vessel = load_copy.pop('vessel', None)
+                load_copy['vessel'] = vessel.get('eta') if vessel else None
 
-            # Set defaults for optional fields
-            _set_default_fields(load_copy)
+                # Set defaults for optional fields
+                _set_default_fields(load_copy)
 
-            if load_copy.get('type_of_load') == 'IMPORT':
-                # if discharge date is not present, derive it from vessel eta
-                if not load_copy.get('dischargedDate') and load_copy.get('vessel'):
-                    load_copy['dischargedDate'] = load_copy['vessel']
+                if load_copy.get('type_of_load') == 'IMPORT':
+                    # if discharge date is not present, derive it from vessel eta
+                    if not load_copy.get('dischargedDate') and load_copy.get('vessel'):
+                        load_copy['dischargedDate'] = load_copy['vessel']
 
-                # if lastFreeDay is not present, derive it from vessel eta
-                if not load_copy.get('lastFreeDay') and load_copy.get('vessel') and not load_copy.get('pickupFromTime') and not load_copy.get('deliveryFromTime'):
-                    load_copy['lastFreeDay'] = (datetime.fromisoformat(load_copy['vessel']) + timedelta(days=7)).isoformat()
+                    # if lastFreeDay is not present, derive it from vessel eta
+                    if not load_copy.get('lastFreeDay') and load_copy.get('vessel') and not load_copy.get('pickupFromTime') and not load_copy.get('deliveryFromTime'):
+                        load_copy['lastFreeDay'] = (datetime.fromisoformat(load_copy['vessel']) + timedelta(days=7)).isoformat()
 
-            # Get current date once
-            current_date = datetime.now().date()
+                # Get current date once
+                current_date = datetime.now().date()
 
-            # Check risks within 2 business days
-            if load_copy.get('lastFreeDay'):
-                last_free_day = datetime.fromisoformat(load_copy['lastFreeDay']).date()
-                if get_business_days_between(current_date, last_free_day) <= 3:
-                    load_copy['at_risk_of_demurrage'] = True
+                # Check risks within 2 business days
+                if load_copy.get('lastFreeDay'):
+                    last_free_day = datetime.fromisoformat(load_copy['lastFreeDay']).date()
+                    if get_business_days_between(current_date, last_free_day) <= 3:
+                        load_copy['at_risk_of_demurrage'] = True
 
-            if load_copy.get('freeReturnDate'): 
-                empty_day = datetime.fromisoformat(load_copy['freeReturnDate']).date()
-                if get_business_days_between(current_date, empty_day) <= 3:
-                    load_copy['at_risk_of_perdiem'] = True
+                if load_copy.get('freeReturnDate'): 
+                    empty_day = datetime.fromisoformat(load_copy['freeReturnDate']).date()
+                    if get_business_days_between(current_date, empty_day) <= 3:
+                        load_copy['at_risk_of_perdiem'] = True
 
-            transformed_loads.append(load_copy)
-            
+                transformed_loads.append(load_copy)
+            except Exception as e:
+                logger.error(f"Error mapping loads: {str(e)}")
+                continue
+
         return transformed_loads
         
     except Exception as e:
@@ -502,3 +507,70 @@ def get_relative_appointment_time(
         raise ValueError(f"Invalid appointment time format: {str(e)}")
     except Exception as e:
         raise RuntimeError(f"Error calculating relative appointment time: {str(e)}")
+
+async def manage_generate_plan_status(carrier: str, plan_date: str, status: str, branch: Any = None, plan_id: str = None):
+    try:
+        fb_client = get_firebase_client()
+        time_duration = 330 # in seconds
+        firebasePayload = {
+            "plan_date": plan_date,
+            "status": status,
+            "eta_complete_time": (datetime.now(timezone.utc) + timedelta(seconds=time_duration)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "total_duration": time_duration
+        }
+
+        if branch:
+            firebasePayload['terminal'] = branch
+
+        if plan_id:
+            firebasePayload['plan_id'] = str(plan_id)
+
+        fb_channel = f'{carrier}/DO_PLAN_GENERATE'
+        fb_data = await fb_client.get_data(fb_channel)
+        
+        if fb_data and isinstance(fb_data, str):
+            fb_data = json.loads(fb_data)
+        fb_data = fb_data or []
+
+        if fb_data and len(fb_data) > 0:
+            # get today date with UTC timezone and remove prev date data from fb_data but not remove upcoming date data
+            today_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d')
+            fb_data = [item for item in fb_data if item.get('plan_date') >= today_date]
+
+            # find planid data in fb_data or not
+            plan_id_data = next((item for item in fb_data if item.get('plan_date') == plan_date), None)
+            if plan_id_data:
+                if status == "RUNNING":
+                    plan_id_data['prev_data'] = plan_id_data.copy()
+                    plan_id_data['status'] = status
+                    plan_id_data.pop('plan_id', None)
+                    if branch:
+                        plan_id_data['terminal'] = branch
+                    plan_id_data['total_duration'] = time_duration
+                    plan_id_data['eta_complete_time'] = (datetime.now(timezone.utc) + timedelta(seconds=time_duration)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                elif status == "ERROR":
+                    if plan_id_data.get('prev_data'):
+                        fb_data.remove(plan_id_data)
+                        fb_data.append(plan_id_data.get('prev_data'))
+                    else:
+                        fb_data.remove(plan_id_data)
+                elif status == "COMPLETED":
+                    plan_id_data['status'] = status
+                    plan_id_data['eta_complete_time'] = (datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                    plan_id_data['plan_id'] = str(plan_id)
+                    plan_id_data.pop('prev_data', None)
+
+                fb_data = json.dumps(fb_data)
+                await fb_client.push_to_channel(fb_channel, fb_data)
+            elif status != "ERROR":
+                fb_data.append(firebasePayload)
+                fb_data = json.dumps(fb_data)
+                await fb_client.push_to_channel(fb_channel, fb_data)
+        elif status != "ERROR":
+            fb_data = [firebasePayload]
+            fb_data = json.dumps(fb_data)
+            await fb_client.push_to_channel(fb_channel, fb_data)
+        return True
+    except Exception as e:
+        logger.error(f"Error in manage_generate_plan_status: {str(e)}")
+        return False

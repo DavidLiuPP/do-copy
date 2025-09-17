@@ -38,17 +38,20 @@ def update_actionable_moves_for_inday_plan(actionable_moves: List[Dict[str, Any]
             return is_behind_schedule         
 
         for move in actionable_moves_copy:
-            assigned_driver = move.get('assigned_driver', None)
-            if not assigned_driver:
+            try:
+                assigned_driver = move.get('assigned_driver', None)
+                if not assigned_driver:
+                    continue
+
+                is_behind_schedule = check_if_behind_schedule(move)
+
+                if is_behind_schedule:
+                    del move['is_manually_planned']
+                    del move['assigned_driver']
+                else:
+                    move['is_active_move'] = True
+            except Exception as e:
                 continue
-
-            is_behind_schedule = check_if_behind_schedule(move)
-
-            if is_behind_schedule:
-                del move['is_manually_planned']
-                del move['assigned_driver']
-            else:
-                move['is_active_move'] = True
 
         return actionable_moves_copy
 
@@ -91,25 +94,27 @@ async def get_behind_schedule_moves_for_in_day_plan(
 
         assigned_moves = []
         for move in behind_schedule_moves:
-            load_data = next((load for load in loads if str(load['_id']) == str(move.get('loadId'))), None)
-            if load_data:
-                driver_order = load_data.get('driverOrder', [])
-                move = [e for e in driver_order if str(e.get('moveId')) == str(move.get('moveId'))]
-                load_assigned_date = move[0].get('loadAssignedDate') if move else None
+            try:
+                load_data = next((load for load in loads if str(load['_id']) == str(move.get('loadId'))), None)
+                if load_data:
+                    driver_order = load_data.get('driverOrder', [])
+                    move = [e for e in driver_order if str(e.get('moveId')) == str(move.get('moveId'))]
+                    load_assigned_date = move[0].get('loadAssignedDate') if move else None
 
-                if not load_assigned_date:
-                    continue
+                    if not load_assigned_date:
+                        continue
 
-                for m in move:
-                    m['is_manually_planned'] = True
+                    for m in move:
+                        m['is_manually_planned'] = True
 
-                assigned_moves.append({
-                    **load_data,
-                    'revenue': charge_group_map.get(str(load_data['_id'])),
-                    'driverOrder': move
-                })
-
-
+                    assigned_moves.append({
+                        **load_data,
+                        'revenue': charge_group_map.get(str(load_data['_id'])),
+                        'driverOrder': move
+                    })
+            except Exception as e:
+                logger.error(f"Error getting behind schedule moves for in day plan: Error: {str(e)}")
+                continue
 
         return assigned_moves
     except Exception as e:
@@ -126,39 +131,43 @@ async def get_schedule_info_from_driver_schedules(vehicle_data: List[Dict[str, A
         new_depots = {}
         vehicles = []
         for v in vehicle_data:
-            matched_driver_schedule = next((ds for ds in driver_schedules if ds.get('driverId') == v.get('_id')), None)
+            try:
+                matched_driver_schedule = next((ds for ds in driver_schedules if ds.get('driverId') == v.get('_id')), None)
 
-            if not matched_driver_schedule:
+                if not matched_driver_schedule:
+                    vehicles.append(v)
+                    continue
+
+                if matched_driver_schedule.get('last_location_eta'):
+                    v['start_minute'] = int(matched_driver_schedule.get('last_location_eta'))
+
+                v['start_location'] = matched_driver_schedule.get('last_location')
+                v['max_working_minutes'] = int(v['max_working_minutes'] - matched_driver_schedule.get('working_minutes', 0))
+
+                if v['start_minute'] >= v['end_minute']:
+                    continue
+
+                if v['max_working_minutes'] <= 0:
+                    continue
+
+                if not matched_driver_schedule.get('last_location'):
+                    vehicles.append(v)
+                    continue
+
+                matched_depot = next((d for d in depot_locations if d.get('depot_customer_id') == matched_driver_schedule.get('last_location')), None)
+
+                new_depot_hash_key = matched_depot.get('hash_key')
+
+                depot_data = deepcopy(matched_depot)
+
+                new_depots[new_depot_hash_key] = depot_data
+
+                v['depot_hash_key'] = new_depot_hash_key
+                v['is_working'] = True
+
                 vehicles.append(v)
+            except Exception as e:
                 continue
-
-            if matched_driver_schedule.get('last_location_eta'):
-                v['start_minute'] = int(matched_driver_schedule.get('last_location_eta'))
-
-            v['start_location'] = matched_driver_schedule.get('last_location')
-            v['max_working_minutes'] = int(v['max_working_minutes'] - matched_driver_schedule.get('working_minutes', 0))
-
-            if v['start_minute'] >= v['end_minute']:
-                continue
-
-            if v['max_working_minutes'] <= 0:
-                continue
-
-            if not matched_driver_schedule.get('last_location'):
-                vehicles.append(v)
-                continue
-
-            matched_depot = next((d for d in depot_locations if d.get('depot_customer_id') == matched_driver_schedule.get('last_location')), None)
-
-            new_depot_hash_key = matched_depot.get('hash_key')
-
-            depot_data = deepcopy(matched_depot)
-
-            new_depots[new_depot_hash_key] = depot_data
-
-            v['depot_hash_key'] = new_depot_hash_key
-
-            vehicles.append(v)
 
         additional_depot_locations = additional_depot_locations + list(new_depots.values())
 

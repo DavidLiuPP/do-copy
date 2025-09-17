@@ -47,17 +47,17 @@ CHASSIS_YARD_CONFIGS = {
 CARRIER_CONFIGS = {
     # Tripoint Intermodal Services
     '63039f613d347315e2a02a2d': {
-        'rotation_order': ['owner_score', 'worked_yesterday', 'distance'],
-        'allow_mismatched_appointment_times': True,
+        'ROTATION_ENABLED': True,
         'vrp_assumptions': {
             'PENALTY_FOR_COMPANY_DRIVER_LONG_DISTANCE_MOVE': 1000
         }
     },
     # Quality Container
     '653a6813f7eb901615236816': {
-        'rotation_order': ['owner_score', 'worked_yesterday','distance', 'name'],
+        'ROTATION_ENABLED': True,
+        'IMPORT_DELIVERLOAD_GRACE_TIME': 45,
         'use_nearest_to_delivery_yard': True,
-        'allow_mismatched_appointment_times': True,
+        'allow_to_plan_following_moves': True,
         'vrp_assumptions': {
             'VEHICLE_USE_PENALTY': 0,
             'MAXIMIZE_WORKING_MINUTES': False,
@@ -75,11 +75,17 @@ CARRIER_CONFIGS = {
         'use_nearest_to_delivery_yard': True,
         'wait_for_empty_appt': True,
         'empty_group_location': { "lat": 33.7610191, "lng": -118.2384082 }, # AMZN GYW9-ODY (3400 PIER S LB) | 3400 New Dock St, Long Beach, CA 90802
-        'allow_to_plan_following_moves': True
+        'allow_to_plan_following_moves': True,
+        
+        'free_flow_empty_return_couple_moves_locations': [
+            '641a10885b159a160742328a', # TRAPAC
+            '641a10885b159a160742328c' # YTI
+        ],
+        'plan_times': [210, 1650]
     },
     # DILE-Trucking
     '623a1a0ae85bec6eacd5096d': {
-        'rotation_order': ['owner_score', 'worked_yesterday', 'distance'],
+        'ROTATION_ENABLED': True,
         'allow_to_plan_following_moves': True
     },
     
@@ -87,10 +93,34 @@ CARRIER_CONFIGS = {
     '6478bad770a34316adb76c24': {
         'use_prepull_driver_for_deliver_move': True,
         'allow_to_plan_following_moves': True
+    },
+
+    # Seaport Intermodal
+    '6500ac3f5b4e7715cea4a2fe': {
+        'allow_to_plan_following_moves': True,
+        
+        'free_flow_empty_return_couple_moves_locations': [
+            '6500ac5a5b4e7715cea4a446', # CN BRAMPTON
+            '6500ac585b4e7715cea4a43a', # CN Malport
+            '654e5d2cac10fb15a38d303a', # CN Misc Yard
+            '650339fbe6761016124a61b9', # CN MONTREAL
+            '650fe544807f7b15992b97d4', # CN - Vancouver
+            '66384b4e2828c1aae4be3607', # CN VANCOUVER
+            '6500ac575b4e7715cea4a425', # CN CALGARY
+            '650fd61b6cc5eb15f2d90f3f' # CN EDMONTON      
+        ],
+        
+        'ROTATION_ENABLED': True,
+        'allow_to_plan_following_moves': True
     }
 }
 
 
 PLANNING_ASSUMPTIONS = {
     'LATE_ARRIVAL_MOVE': 'LATE_ARRIVAL_MOVE'
+}
+
+YARD_ALLOWED_OPERATIONS = {
+    'CHASSIS_DROP_HOOK': 'CHASSIS_DROP_HOOK',
+    'CONTAINER_DROP_HOOK': 'CONTAINER_DROP_HOOK'
 }

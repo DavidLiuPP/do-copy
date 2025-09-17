@@ -4,98 +4,24 @@ import pytz
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from bson.objectid import ObjectId
-from app.postgres_connection import PostgresConnection
+
 from app.services.redis_service import get_default_yard_location
 from app.services.common_service import get_time_zone, get_carrier_preferences
 from app.utils.distance_calc import calculate_distance_between_locations
-from app.mongo_services.load_service import get_loads_collection
 from app.postgres_services.driver_service import get_drivers
 from app.modules.optimizer.hos_service import get_hos_data_for_drivers
-from app.modules.optimizer.driver_plan import get_planning_time_windows
+from app.modules.optimizer.driver_plan import get_shift_time
 from app.mongo_services.load_service import get_completed_moves, get_moves_from_driver_order
 from app.modules.scheduler.utility import map_loads_for_scheduler
 from app.postgres_services.configurations_service import get_equipment_validations, get_container_sizes, get_container_types
-from vrp_optimizer.helpers import get_chassis_activity_between_moves
+from vrp_optimizer.helpers import generated_criteria, get_chassis_activity_between_moves, get_all_driver_default_locations
 from vrp_optimizer.assumptions import CHASSIS_ACTIVITIES
 
 from app.modules.optimizer.map_loads_optimizer_service import map_actionable_moves
 from load_optimizer.get_optimal_plan_v3 import get_optimal_plan_v3
+from app.mongo_services.mongo_service import get_customers
 
 logger = logging.getLogger(__name__)
-
-async def get_driver_plan(carrier: str, plan_id: str):
-    """
-    Get the driver plan
-    """
-    try:
-        postgres = PostgresConnection()
-        pool = await postgres.get_pool()
-
-        # Find the move to remove
-        async with pool.acquire() as conn:
-            optimizer_loads = await conn.fetch(
-                """
-                SELECT * FROM optimizer_loads
-                WHERE carrier = $1
-                    AND plan_id = $2
-                    AND is_deleted = false
-                """,
-                carrier,
-                plan_id
-            )
-
-            if not optimizer_loads:
-                raise ValueError(f"Moves not found in plan with ID {plan_id}")
-
-            optimizer_loads = [dict(row) for row in optimizer_loads]
-
-        return optimizer_loads
-
-    except Exception as e:
-        logger.error(e)
-        raise Exception(f"Failed to get driver plan: {str(e)}")
-
-async def get_optimizer_plan_detail(carrier: str, plan_id: str):
-    """
-    Get the optimizer plan details
-    """
-    try:
-        postgres = PostgresConnection()
-        pool = await postgres.get_pool()
-
-        # Find the move to remove
-        async with pool.acquire() as conn:
-            optimizer_plan = await conn.fetch(
-                """
-                SELECT * FROM optimizer_plans
-                WHERE carrier = $1
-                    AND id = $2
-                """,
-                carrier,
-                plan_id
-            )
-
-            if not optimizer_plan:
-                raise ValueError(f"Moves not found in plan with ID {plan_id}")
-
-            optimizer_plan = [dict(row) for row in optimizer_plan]
-
-        return optimizer_plan[0]
-
-    except Exception as e:
-        logger.error(e)
-        raise Exception(f"Failed to get driver plan: {str(e)}")
-
-
-def group_and_sort_plan_by_driver(plan):
-    # Group plan by assigned driver
-    plan_by_driver = {plan.get('driver'): [] for plan in plan}
-    [plan_by_driver[plan.get('driver')].append(plan) for plan in plan]
-    
-    # Sort plan by move_start_time for each driver
-    for driver in plan_by_driver:
-        plan_by_driver[driver].sort(key=lambda x: x.get('move_start_time') if x.get('move_start_time') else datetime.max)
-    return plan_by_driver
 
 
 def create_plan_detailed_entries(plan_by_driver, tz, driver_features):
@@ -151,170 +77,6 @@ def create_plan_detailed_entries(plan_by_driver, tz, driver_features):
         logger.error(e)
         raise Exception(f"Failed to create plan detailed entries: {str(e)}")
 
-async def get_driver_plan_stats_controller(user_payload: dict, plan_id: str):
-    """
-    Get the stats for the driver plan
-    """
-    try:
-        # Validate inputs
-        carrier = user_payload.get('carrier')
-        timeZone = await get_time_zone(carrier)
-        tz = pytz.timezone(timeZone)
-
-        user_payload['timeZone'] = timeZone
-
-        optimizer_plan_detail = await get_optimizer_plan_detail(carrier, plan_id)
-
-        plan_date = optimizer_plan_detail.get('plan_date').isoformat()
-        converted_plan_date = tz.localize(datetime.strptime(plan_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
-
-        optimal_plan = await get_driver_plan(carrier, plan_id)
-
-        # get all drivers from driver features
-        driver_features = await get_drivers(carrier, converted_plan_date, [], {'exclude_account_hold': True})
-
-        total_prepulls = 0
-        for load in optimal_plan:
-            load_events = json.loads(load.get('move'))
-            if len(load_events) == 2:
-                if load_events[0].get('type') == 'PULLCONTAINER' and load_events[1].get('type') in ['DROPCONTAINER', 'LIFTOFF']:
-                    total_prepulls += 1
-
-        optimal_plan_by_driver = group_and_sort_plan_by_driver(optimal_plan)
-        
-        optimal_plan_detailed_entries = create_plan_detailed_entries(optimal_plan_by_driver, tz, driver_features)
-
-        # get the stats for the plan
-        optimal_total_moves = len(optimal_plan)
-        optimal_total_drivers = len(optimal_plan_by_driver)
-        optimal_empty_miles = sum(entry['empty_miles'] for entry in optimal_plan_detailed_entries)
-        optimal_trip_miles = sum(entry['trip_miles'] for entry in optimal_plan_detailed_entries)
-        optimal_total_miles = optimal_empty_miles + optimal_trip_miles
-
-        total_pulls = len([entry for entry in optimal_plan_detailed_entries if entry['type'] == 'PULLCONTAINER'])
-        total_deliveries = len([entry for entry in optimal_plan_detailed_entries if entry['type'] == 'DELIVERLOAD'])
-        total_returns = len([entry for entry in optimal_plan_detailed_entries if entry['type'] == 'RETURNCONTAINER'])
-
-        actual_loads_appt = await get_actual_loads_appt(carrier, converted_plan_date)
-
-        overall_stats = {
-            "total_moves": optimal_total_moves,
-            "total_drivers": optimal_total_drivers,
-            "total_empty_miles": optimal_empty_miles,
-            "total_trip_miles": optimal_trip_miles,
-            "total_miles": optimal_total_miles,
-            "total_pulls": total_pulls,
-            "total_deliveries": total_deliveries,
-            "total_returns": total_returns,
-            "total_prepulls": total_prepulls,
-            "actual_delivery_appt": actual_loads_appt.get('deliveryCount'),
-            "actual_pickup_appt": actual_loads_appt.get('pickupCount'),
-            "actual_return_appt": actual_loads_appt.get('returnCount'),
-        }
-
-        return {
-            "status": "success",
-            "message": "Driver plan stats retrieved successfully",
-            "stats": overall_stats
-        }
-    except Exception as e:
-        logger.error(e)
-        raise Exception(f"Failed to get driver plan stats: {str(e)}")
-
-async def get_actual_loads_appt(carrier: str, plan_Date: datetime):
-    """
-    Get the actual loads appointments
-    """
-    try:
-        start_time = plan_Date
-        end_time = plan_Date + timedelta(days=1)
-
-        load_collection = await get_loads_collection()
-        find_aggregation = [
-            {
-                "$match": {
-                    "carrier": ObjectId(carrier),
-                    "$or": [
-                        {
-                            "pickupTimes.0.pickupFromTime": {
-                                "$gte": start_time,
-                                "$lt": end_time
-                            }
-                        },
-                        {
-                            "deliveryTimes.0.deliveryFromTime": {
-                                "$gte": start_time,
-                                "$lt": end_time
-                            }
-                        },
-                        {
-                            "returnFromTime": {
-                                "$gte": start_time,
-                                "$lt": end_time
-                            }
-                        }
-                    ]
-                }
-            },
-            {
-                "$project": {
-                    "pickupTimes": { "$arrayElemAt": ["$pickupTimes", 0] },
-                    "deliveryTimes": { "$arrayElemAt": ["$deliveryTimes", 0] },
-                    "returnFromTime": 1
-                }
-            },
-            {
-                "$project": {
-                    "pickupMatched": {
-                        "$cond": [
-                            {
-                                "$and": [
-                                    {"$gte": ["$pickupTimes.pickupFromTime", start_time]},
-                                    {"$lt": ["$pickupTimes.pickupFromTime", end_time]}
-                                ]
-                            }, 1, 0
-                        ]
-                    },
-                    "deliveryMatched": {
-                        "$cond": [
-                            {
-                                "$and": [
-                                    {"$gte": ["$deliveryTimes.deliveryFromTime", start_time]},
-                                    {"$lt": ["$deliveryTimes.deliveryFromTime", end_time]}
-                                ]
-                            }, 1, 0
-                        ]
-                    },
-                    "returnMatched": {
-                        "$cond": [
-                            {
-                                "$and": [
-                                    {"$gte": ["$returnFromTime", start_time]},
-                                    {"$lt": ["$returnFromTime", end_time]}
-                                ]
-                            }, 1, 0
-                        ]
-                    }
-                }
-            },
-            {
-                "$group": {
-                    "_id": None,
-                    "pickupCount": {"$sum": "$pickupMatched"},
-                    "deliveryCount": {"$sum": "$deliveryMatched"},
-                    "returnCount": {"$sum": "$returnMatched"}
-                }
-            }
-        ]
-
-        loads = load_collection.aggregate(find_aggregation)
-
-        loads = await loads.to_list(length=1000)
-
-        return loads[0]
-    except Exception as e:
-        logger.error(e)
-        raise Exception(f"Failed to get actual loads appointments: {str(e)}")
 
 async def map_loads_for_reporting(
     user_payload: Dict[str, Any],
@@ -348,13 +110,12 @@ async def map_loads_for_reporting(
 
                 load_copy['is_completed_move'] = True
                 load_copy['is_manually_planned'] = False
-                load_copy['is_assigned_move'] = True
-                load_copy['assigned_driver'] = actionable_move[0].get('driver')
+                load_copy['is_assigned_move'] = False
                 load_copy['move'] = actionable_move
                 load_copy['move_index'] = move_index
                 loads_with_actionable_moves.append(load_copy)
 
-        mapped_actionable_moves, _ = await map_actionable_moves(
+        mapped_actionable_moves, _, _ = await map_actionable_moves(
             user_payload, 
             loads_with_actionable_moves, 
             converted_plan_date,
@@ -390,16 +151,21 @@ def create_plan_detailed_entries_compare(
     appointment_dict,
     container_sizes_map,
     container_types_map,
-    equipment_validations
+    equipment_validations,
+    depot_locations = []
 ):
     try:
         detailed_entries = []
+        bobtail_transfer_count = 0
+        chassis_transfer_count = 0
         for driver in plan_by_driver:
             driver_feature = next((df for df in driver_features if df and df.get('_id') == driver), {})
             depot_customer_id = driver_feature.get('depot_customer_id', '')
             default_yard_location = next((location for location in default_yard_locations if location.get('customerId') == depot_customer_id), None)
             if not default_yard_location:
-                continue
+                default_yard_location = next((customer for customer in depot_locations if str(customer.get('customerId')) == depot_customer_id), None)
+                if not default_yard_location:
+                    continue
 
             last_event = default_yard_location
             for index, move in enumerate(plan_by_driver[driver]):
@@ -418,6 +184,58 @@ def create_plan_detailed_entries_compare(
                                 event.get('address')
                             ) if event.get('address') else 0
                         )
+
+                        if event.get('customerId') != default_yard_location.get('customerId'):
+                            if event.get('type') != 'HOOKCONTAINER':
+                                source = {
+                                    'isDepot': False,
+                                    'is_free_flow_move': False,
+                                    'end_event': default_yard_location,
+                                    'end_loc': [default_yard_location.get('address').get('lat'), default_yard_location.get('address').get('lng')],
+                                    'container_size_label': default_yard_location.get('container_size_label', ''),
+                                    'container_type_label': default_yard_location.get('container_type_label', ''),
+                                }
+                                destination = {
+                                    'isDepot': False,
+                                    'is_free_flow_move': False,
+                                    'start_event': event,
+                                    'start_loc': [event.get('address').get('lat'), event.get('address').get('lng')],
+                                    'container_size_label': event.get('container_size_label', ''),
+                                    'container_type_label': event.get('container_type_label', ''),
+                                }
+                                
+                                chassis_activity = get_chassis_activity_between_moves(
+                                    source,
+                                    destination,
+                                    equipment_validations,
+                                    default_yard_locations,
+                                    [],
+                                    carrier
+                                )
+                                if chassis_activity.get('type') != CHASSIS_ACTIVITIES["NO_ACTION"]:
+                                    chassis_details = chassis_activity.get('drop_yard') or chassis_activity.get('hook_yard')
+                                    try:
+                                        detailed_entries.append({
+                                            "_id": event.get('_id'),
+                                            "driver_id": move.get('assigned_driver'),
+                                            "driver": move.get('assigned_driver_name'),
+                                            "reference_number": move.get('reference_number'),
+                                            "type": chassis_activity.get('type'),
+                                            "from": default_yard_location.get('company_name', ''),
+                                            "to": chassis_details.get('company_name', ''),
+                                            "enroute": datetime.fromisoformat(event['enroute']).astimezone(tz).strftime('%Y-%m-%d %I:%M %p'),
+                                            "arrived": datetime.fromisoformat(event['arrived']).astimezone(tz).strftime('%Y-%m-%d %I:%M %p'),
+                                            "departed": datetime.fromisoformat(event['departed']).astimezone(tz).strftime('%Y-%m-%d %I:%M %p'),
+                                            "trip_miles": 0,
+                                            "empty_miles": int(empty_miles),
+                                            "customer_id": chassis_details.get('location_id', ''),
+                                            "chassis_activity": chassis_activity.get('type'),
+                                            "has_chassis_pick": chassis_activity.get('type') == CHASSIS_ACTIVITIES["HOOKCHASSIS"],
+                                            "has_chassis_termination": chassis_activity.get('type') == CHASSIS_ACTIVITIES["DROPCHASSIS"],
+                                        })
+                                    except Exception as e:
+                                        logger.error(e)
+                                        continue
                         trip_miles = 0
                     # end of move
                     elif index == len(plan_by_driver[driver]) - 1 and e_index == len(move['move']) - 1:
@@ -427,7 +245,58 @@ def create_plan_detailed_entries_compare(
                                 default_yard_location.get('address')
                             ) if event.get('address') else 0
                         )
-                    
+
+                        if event.get('customerId') != default_yard_location.get('customerId'):
+                            if event.get('type') != 'DROPCONTAINER':
+                                source = {
+                                    'isDepot': False,
+                                    'is_free_flow_move': False,
+                                    'end_event': event,
+                                    'end_loc': [event.get('address').get('lat'), event.get('address').get('lng')],
+                                    'container_size_label': event.get('container_size_label', ''),
+                                    'container_type_label': event.get('container_type_label', ''),
+                                }
+                                destination = {
+                                    'isDepot': False,
+                                    'is_free_flow_move': False,
+                                    'start_event': default_yard_location,
+                                    'start_loc': [default_yard_location.get('address').get('lat'), default_yard_location.get('address').get('lng')],
+                                    'container_size_label': default_yard_location.get('container_size_label', ''),
+                                    'container_type_label': default_yard_location.get('container_type_label', ''),
+                                }
+                                
+                                chassis_activity = get_chassis_activity_between_moves(
+                                    source,
+                                    destination,
+                                    equipment_validations,
+                                    default_yard_locations,
+                                    [],
+                                    carrier
+                                )
+                                if chassis_activity.get('type') != CHASSIS_ACTIVITIES["NO_ACTION"]:
+                                    chassis_details = chassis_activity.get('drop_yard') or chassis_activity.get('hook_yard')
+                                    try:
+                                        detailed_entries.append({
+                                        "_id": event.get('_id'),
+                                        "driver_id": move.get('assigned_driver'),
+                                        "driver": move.get('assigned_driver_name'),
+                                        "reference_number": move.get('reference_number'),
+                                        "type": chassis_activity.get('type'),
+                                        "from": event.get('company_name', ''),
+                                        "to": chassis_details.get('company_name', ''),
+                                        "enroute": datetime.fromisoformat(event['enroute']).astimezone(tz).strftime('%Y-%m-%d %I:%M %p'),
+                                        "arrived": datetime.fromisoformat(event['arrived']).astimezone(tz).strftime('%Y-%m-%d %I:%M %p'),
+                                        "departed": datetime.fromisoformat(event['departed']).astimezone(tz).strftime('%Y-%m-%d %I:%M %p'),
+                                        "trip_miles": int(empty_miles),
+                                        "empty_miles": int(empty_miles),
+                                        "customer_id": chassis_details.get('location_id', ''),
+                                        "chassis_activity": chassis_activity.get('type'),
+                                        "has_chassis_pick": chassis_activity.get('type') == CHASSIS_ACTIVITIES["HOOKCHASSIS"],
+                                        "has_chassis_termination": chassis_activity.get('type') == CHASSIS_ACTIVITIES["DROPCHASSIS"],
+                                    })
+                                    except Exception as e:
+                                        logger.error(e)
+                                        continue
                     # middle of the move
                     elif e_index == 0:
                         source = {
@@ -455,6 +324,32 @@ def create_plan_detailed_entries_compare(
                             carrier
                         )
                         is_chassis_activity_needed = chassis_activity.get('type') != CHASSIS_ACTIVITIES["NO_ACTION"]
+
+                        ## number of chassis activity
+                        if is_chassis_activity_needed:
+                            chassis_details = chassis_activity.get('drop_yard') or chassis_activity.get('hook_yard')
+                            try:
+                                detailed_entries.append({
+                                    "_id": event.get('_id'),
+                                    "driver_id": move.get('assigned_driver'),
+                                    "driver": move.get('assigned_driver_name'),
+                                    "reference_number": move.get('reference_number'),
+                                    "type": chassis_activity.get('type'),
+                                    "from": source.get('company_name', ''),
+                                    "to": chassis_details.get('company_name', ''),
+                                    "enroute": datetime.fromisoformat(event['enroute']).astimezone(tz).strftime('%Y-%m-%d %I:%M %p'),
+                                    "arrived": datetime.fromisoformat(event['arrived']).astimezone(tz).strftime('%Y-%m-%d %I:%M %p'),
+                                    "departed": datetime.fromisoformat(event['departed']).astimezone(tz).strftime('%Y-%m-%d %I:%M %p'),
+                                    "trip_miles": 0,
+                                    "empty_miles": int(empty_miles),
+                                    "customer_id": chassis_details.get('location_id', ''),
+                                    "chassis_activity": chassis_activity.get('type'),
+                                    "has_chassis_pick": chassis_activity.get('type') == CHASSIS_ACTIVITIES["HOOKCHASSIS"],
+                                    "has_chassis_termination": chassis_activity.get('type') == CHASSIS_ACTIVITIES["DROPCHASSIS"],
+                                })
+                            except Exception as e:
+                                logger.error(e)
+                                continue
 
                         if not is_chassis_activity_needed:
                             empty_miles = calculate_distance_between_locations(
@@ -500,13 +395,40 @@ def create_plan_detailed_entries_compare(
                             'appointment': appointment_dict.get(move.get('load_id'), {}).get(event['type'], ""),
                             "trip_miles": int(trip_miles),
                             "empty_miles": int(empty_miles) if empty_miles < 500 else 30,
+                            "customer_id": event.get('customerId', ''),
                         })
 
                         last_event = event
                     except Exception as e:
                         logger.error(e)
                         continue
-        return detailed_entries
+                
+            if len(detailed_entries) > 0:
+                for index, move_event in enumerate(detailed_entries):
+                    if index == 0:
+                        if move_event.get('type') in ['HOOKCHASSIS', 'HOOKCONTAINER']:
+                            if move_event.get('customer_id') != default_yard_location.get('customerId'):
+                                bobtail_transfer_count += 1
+                                move_event['has_bobtail_transfer'] = True
+                    else:
+                        if len(detailed_entries) == index + 1:
+                            if move_event.get('type') in ['DROPCONTAINER', 'DROPCHASSIS']:
+                                if move_event.get('customer_id') != default_yard_location.get('customerId'):
+                                    bobtail_transfer_count += 1
+                                    move_event['has_bobtail_transfer'] = True
+                        else:
+                            if detailed_entries[index - 1].get('reference_number') != move_event.get('reference_number'):
+                                prev_event = detailed_entries[index - 1]
+                                current_event = move_event
+                                if prev_event.get('customer_id') != current_event.get('customer_id'):
+                                    if prev_event.get('type') in ['RETURNCONTAINER', 'LIFTOFF', 'DROPCHASSIS'] and current_event.get('type') in ['PULLCONTAINER', 'LIFTON', 'HOOKCHASSIS']: 
+                                        chassis_transfer_count += 1
+                                        move_event['has_chassis_transfer'] = True
+                                    if prev_event.get('type') in ['DROPCONTAINER'] and current_event.get('type') in ['HOOKCONTAINER']:
+                                        bobtail_transfer_count += 1
+                                        move_event['has_bobtail_transfer'] = True
+        
+        return detailed_entries, bobtail_transfer_count, chassis_transfer_count
     except Exception as e:
         logger.error(e)
         raise Exception(f"Failed to create plan detailed entries for comparison: {str(e)}")
@@ -570,6 +492,268 @@ def find_unplanned_moves(actionable_moves: list, optimal_plan: list) -> list:
     return unplanned_moves
 
 
+def get_kpi_data_from_plan_entries(plan_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Count dual transactions, support moves, chassis pick and chassis termination driver-wise and overall from plan entries.
+    Support moves = bobtail transfer + chassis transfer
+    Dual transaction = consecutive entries with different reference_number but same location.
+    Chassis pick = hook chassis
+    Chassis termination = drop chassis
+    Customer chassis pick = hook chassis at customer
+    Customer chassis termination = drop chassis at customer
+    Driver wise support moves = chassis pick + chassis termination
+    Customer wise support moves = chassis pick + chassis termination
+    Driver wise dual transaction = consecutive entries with different reference_number but same location.
+    Customer wise dual transaction = consecutive entries with different reference_number but same location.
+    Driver wise trip miles = trip miles
+    Driver wise empty miles = empty miles
+    Driver wise bobtail transfer = bobtail transfer
+    Driver wise support moves = support moves
+    Driver wise chassis pick = chassis pick
+    Driver wise chassis termination = chassis termination
+    Customer wise support moves = support moves
+    Customer wise chassis pick = chassis pick
+    Customer wise chassis termination = chassis termination
+    Total dual transactions = dual transactions
+    Total support moves = support moves
+    Total chassis pick = chassis pick
+    Total chassis termination = chassis termination
+    Total empty miles = empty miles
+    Total trip miles = trip miles
+    Total bobtail transfer = bobtail transfer
+    Total support moves = support moves
+    Total chassis pick = chassis pick
+    Total chassis termination = chassis termination
+
+    """
+    try:
+        driver_counts = {}
+        driver_trip_miles = {}
+        driver_bobtail_transfer_count = {}
+        driver_support_moves_count = {}
+        driver_chassis_pick_count = {}
+        driver_chassis_termination_count = {}
+        customer_chassis_pick_count = {}
+        customer_chassis_termination_count = {}
+        
+        # Single loop to handle all processing
+        for i in range(len(plan_entries)):
+            current = plan_entries[i]
+            
+            # Track driver-wise trip miles
+            if current.get('driver_id') not in driver_trip_miles:
+                driver_trip_miles[current.get('driver_id')] = {
+                    'driver_id': current.get('driver_id'),
+                    'driver_name': current.get('driver', ''),
+                    'total_trip_miles': 0,
+                    'empty_miles': 0
+                }
+            driver_trip_miles[current.get('driver_id')]['total_trip_miles'] += current.get('trip_miles', 0)
+            driver_trip_miles[current.get('driver_id')]['empty_miles'] += current.get('empty_miles', 0)
+
+            # Track driver-wise bobtail transfer count
+            if current.get('driver_id') not in driver_bobtail_transfer_count:
+                driver_bobtail_transfer_count[current.get('driver_id')] = {
+                    'driver_id': current.get('driver_id'),
+                    'driver_name': current.get('driver', ''),
+                    'bobtail_transfer_count': 0,
+                    'total_empty_miles': 0
+                }
+            if current.get('has_bobtail_transfer'):
+                driver_bobtail_transfer_count[current.get('driver_id')]['bobtail_transfer_count'] += 1
+                driver_bobtail_transfer_count[current.get('driver_id')]['total_empty_miles'] += current.get('empty_miles', 0)
+
+            # Track driver-wise support moves count
+            if current.get('driver_id') not in driver_support_moves_count:
+                driver_support_moves_count[current.get('driver_id')] = {
+                    'driver_id': current.get('driver_id'),
+                    'driver_name': current.get('driver', ''),
+                    'support_moves_count': 0,
+                    'total_trip_miles': 0,
+                    'total_empty_miles': 0
+                }
+            if current.get('has_chassis_transfer') or current.get('has_bobtail_transfer'):
+                driver_support_moves_count[current.get('driver_id')]['support_moves_count'] += 1
+                driver_support_moves_count[current.get('driver_id')]['total_empty_miles'] += current.get('empty_miles', 0)
+            
+            # Track driver-wise chassis pick count
+            if current.get('driver_id') not in driver_chassis_pick_count:
+                driver_chassis_pick_count[current.get('driver_id')] = {
+                    'driver_id': current.get('driver_id'),
+                    'driver_name': current.get('driver', ''),
+                    'chassis_pick_count': 0,
+                    'total_empty_miles': 0
+                }
+            if current.get('has_chassis_pick'):
+                driver_chassis_pick_count[current.get('driver_id')]['chassis_pick_count'] += 1
+                driver_chassis_pick_count[current.get('driver_id')]['total_empty_miles'] += current.get('empty_miles', 0)
+
+            # Track driver-wise chassis termination count
+            if current.get('driver_id') not in driver_chassis_termination_count:
+                driver_chassis_termination_count[current.get('driver_id')] = {
+                    'driver_id': current.get('driver_id'),
+                    'driver_name': current.get('driver', ''),
+                    'chassis_termination_count': 0,
+                    'total_empty_miles': 0
+                }
+            if current.get('has_chassis_termination'):
+                driver_chassis_termination_count[current.get('driver_id')]['chassis_termination_count'] += 1
+                driver_chassis_termination_count[current.get('driver_id')]['total_empty_miles'] += current.get('empty_miles', 0)
+
+            # Track customer-wise chassis pick count
+            if current.get('customer_id') not in customer_chassis_pick_count:
+                customer_chassis_pick_count[current.get('customer_id')] = {
+                    'customer_id': current.get('customer_id'),
+                    'customer_name': current.get('customer_name', ''),
+                    'chassis_pick_count': 0
+                }
+            if current.get('has_chassis_pick'):
+                customer_chassis_pick_count[current.get('customer_id')]['chassis_pick_count'] += 1
+            
+            # Track customer-wise chassis termination count
+            if current.get('customer_id') not in customer_chassis_termination_count:
+                customer_chassis_termination_count[current.get('customer_id')] = {
+                    'customer_id': current.get('customer_id'),
+                    'customer_name': current.get('customer_name', ''),
+                    'chassis_termination_count': 0
+                }
+            if current.get('has_chassis_termination'):
+                customer_chassis_termination_count[current.get('customer_id')]['chassis_termination_count'] += 1
+
+            # Check for dual transactions (only if there's a next entry)
+            if i < len(plan_entries) - 1:
+                next_entry = plan_entries[i + 1]
+                
+                # Same driver, different move, same location = dual transaction
+                if (current.get('driver_id') == next_entry.get('driver_id') and
+                    current.get('reference_number') != next_entry.get('reference_number') and
+                    current.get('customer_id') and
+                    current.get('customer_id') == next_entry.get('customer_id') and
+                    current.get('type') != next_entry.get('type') and
+                    current.get('type') == 'RETURNCONTAINER' and
+                    next_entry.get('type') == 'PULLCONTAINER'
+                ):
+                    
+                    driver_id = current.get('driver_id')
+                    if driver_id not in driver_counts:
+                        driver_counts[driver_id] = {
+                            'driver_id': driver_id,
+                            'driver_name': current.get('driver', ''),
+                            'dual_transaction_count': 0
+                        }
+                    driver_counts[driver_id]['dual_transaction_count'] += 1
+                    driver_counts[driver_id].setdefault('loads', []).append((current.get('reference_number'), next_entry.get('reference_number')))
+        
+        # filter out drivers with 0 values
+        if (len(driver_bobtail_transfer_count) > 0):
+            driver_bobtail_transfer_count = [d for d in driver_bobtail_transfer_count.values() if driver_bobtail_transfer_count.get(d['driver_id'], {}).get('bobtail_transfer_count', 0) > 0]
+
+        if (len(driver_support_moves_count) > 0):
+            driver_support_moves_count = [d for d in driver_support_moves_count.values() if driver_support_moves_count.get(d['driver_id'], {}).get('support_moves_count', 0) > 0]
+
+        if (len(driver_chassis_pick_count) > 0):
+            driver_chassis_pick_count = [d for d in driver_chassis_pick_count.values() if driver_chassis_pick_count.get(d['driver_id'], {}).get('chassis_pick_count', 0) > 0]
+
+        if (len(driver_chassis_termination_count) > 0):
+            driver_chassis_termination_count = [d for d in driver_chassis_termination_count.values() if driver_chassis_termination_count.get(d['driver_id'], {}).get('chassis_termination_count', 0) > 0]
+
+        if (len(customer_chassis_pick_count) > 0):
+            customer_chassis_pick_count = [d for d in customer_chassis_pick_count.values() if customer_chassis_pick_count.get(d['customer_id'], {}).get('chassis_pick_count', 0) > 0]
+
+        if (len(customer_chassis_termination_count) > 0):
+            customer_chassis_termination_count = [d for d in customer_chassis_termination_count.values() if customer_chassis_termination_count.get(d['customer_id'], {}).get('chassis_termination_count', 0) > 0]
+
+
+        return {
+            'total_dual_transactions': {
+                'total_dual_transactions': sum(d['dual_transaction_count'] for d in driver_counts.values()),
+                'drivers_with_dual_transactions': len(driver_counts),
+                'driver_wise_counts': list(driver_counts.values())
+            },
+            'driver_trip_miles': list(driver_trip_miles.values()),
+            'driver_bobtail_transfer_count': {
+                'total_bobtail_transfer_count': sum(d['bobtail_transfer_count'] for d in driver_bobtail_transfer_count),
+                'drivers_with_bobtail_transfer': len(driver_bobtail_transfer_count),
+                'driver_wise_counts': list(driver_bobtail_transfer_count),
+                'total_empty_miles': sum(d['total_empty_miles'] for d in driver_bobtail_transfer_count)
+            },
+            'driver_support_moves_count': {
+                'total_support_moves_count': sum(d['support_moves_count'] for d in driver_support_moves_count),
+                'drivers_with_support_moves': len(driver_support_moves_count),
+                'driver_wise_counts': list(driver_support_moves_count),
+                'total_empty_miles': sum(d['total_empty_miles'] for d in driver_support_moves_count)
+            },
+            'driver_chassis_pick_count': {
+                'total_chassis_pick_count': sum(d['chassis_pick_count'] for d in driver_chassis_pick_count),
+                'drivers_with_chassis_pick': len(driver_chassis_pick_count),
+                'driver_wise_counts': list(driver_chassis_pick_count),
+                'total_empty_miles': sum(d['total_empty_miles'] for d in driver_chassis_pick_count)
+            },
+            'driver_chassis_termination_count': {
+                'total_chassis_termination_count': sum(d['chassis_termination_count'] for d in driver_chassis_termination_count),
+                'drivers_with_chassis_termination': len(driver_chassis_termination_count),
+                'driver_wise_counts': list(driver_chassis_termination_count),
+                'total_empty_miles': sum(d['total_empty_miles'] for d in driver_chassis_termination_count)
+            },
+            'customer_chassis_pick_count': {
+                'total_chassis_pick_count': sum(d['chassis_pick_count'] for d in customer_chassis_pick_count),
+                'customers_with_chassis_pick': len(customer_chassis_pick_count),
+                'customer_wise_counts': list(customer_chassis_pick_count)
+            },
+            'customer_chassis_termination_count': {
+                'total_chassis_termination_count': sum(d['chassis_termination_count'] for d in customer_chassis_termination_count),
+                'customers_with_chassis_termination': len(customer_chassis_termination_count),
+                'customer_wise_counts': list(customer_chassis_termination_count)
+            }
+
+        }
+        
+    except Exception as e:
+        logger.error(f"Error finding dual transactions: {str(e)}")
+        return {
+            'total_dual_transactions': {
+                'total_dual_transactions': 0,
+                'drivers_with_dual_transactions': 0,
+                'driver_wise_counts': 0
+            },
+            'driver_trip_miles': [],
+            'driver_bobtail_transfer_count': {
+                'total_bobtail_transfer_count': 0,
+                'drivers_with_bobtail_transfer': 0,
+                'driver_wise_counts': [],
+                'total_empty_miles': 0
+            },
+            'driver_support_moves_count': {
+                'total_support_moves_count': 0,
+                'drivers_with_support_moves': 0,
+                'driver_wise_counts': [],
+                'total_empty_miles': 0
+            },
+            'driver_chassis_pick_count': {
+                'total_chassis_pick_count': 0,
+                'drivers_with_chassis_pick': 0,
+                'driver_wise_counts': [],
+                'total_empty_miles': 0
+            },
+            'driver_chassis_termination_count': {
+                'total_chassis_termination_count': 0,
+                'drivers_with_chassis_termination': 0,
+                'driver_wise_counts': [],
+                'total_empty_miles': 0
+            },
+            'customer_chassis_pick_count': {
+                'total_chassis_pick_count': 0,
+                'customers_with_chassis_pick': 0,
+                'customer_wise_counts': []
+            },
+            'customer_chassis_termination_count': {
+                'total_chassis_termination_count': 0,
+                'customers_with_chassis_termination': 0,
+                'customer_wise_counts': []
+            }
+        }
+
+
 async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -> Dict[str, str]:
     """
     Compare the optimiser plan with the original events and return the delta
@@ -597,7 +781,7 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
         converted_plan_date = tz.localize(datetime.strptime(plan_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
 
         # get default yard location
-        default_yard_locations = await get_default_yard_location(carrier)
+        default_yard_locations = await get_default_yard_location(carrier, False, plan_branch)
         # for each yard location, add start_loc and end_loc
         for location in default_yard_locations:
             depot_customer_id = location.get('customerId')
@@ -609,20 +793,45 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
         user_settings = await get_equipment_validations(carrier)
         equipment_validations = user_settings.get('equipment_validations', [])
 
-        planning_windows = await get_planning_time_windows(carrier, converted_plan_date, shift, plan_branch, timeZone)
-        planning_minutes = planning_windows.get('plan_window') or [0, 1440]
+        planning_minutes = await get_shift_time(carrier, converted_plan_date, shift, plan_branch, timeZone)
         plan_from_time = converted_plan_date + timedelta(minutes=planning_minutes[0])
         plan_to_time = converted_plan_date + timedelta(minutes=planning_minutes[1])
 
         user_payload['default_yard_locations'] = default_yard_locations
         user_payload['timeZone'] = timeZone
         user_payload['distanceUnit'] = carrier_preferences.get('distanceUnit', 'mi')
-
+        driver_criteria, _ = generated_criteria(plan_date=converted_plan_date, plan_branch=plan_branch, shift=shift)
         # get drivers
-        drivers = await get_drivers(carrier, converted_plan_date, plan_branch, {'exclude_account_hold': True, 'shift': shift})
+        drivers = await get_drivers(carrier, driver_criteria, {'exclude_account_hold': True})
         drivers = await get_hos_data_for_drivers(drivers, carrier)
 
-        drivers_actual = await get_drivers(carrier, converted_plan_date, [], {'exclude_account_hold': False, 'shift': shift})
+        driver_default_locations = get_all_driver_default_locations(drivers)
+        yard_customers = await get_customers({
+            "_id": {
+                "$in": [
+                    ObjectId(driver_default_location.get('depot_customer_id'))
+                    for driver_default_location in driver_default_locations
+                ]
+            }
+        })
+
+        depot_locations = []
+        for y in yard_customers:
+            depot_locations.append({
+                "_id": str(y['_id']),
+                "customerId": str(y.get("_id", "")),
+                "company_name": y.get("company_name", ""),
+                "address": y.get("address", {}),
+                "city": y.get("city", ""),
+                "state": y.get("state", ""),
+                "country": y.get("country", ""),
+                "zip_code": y.get("zip_code", ""),
+                "id": str(y['_id']),
+                "is_chassis_pick_allowed": True,
+                "is_chassis_termination_allowed": True
+            })   
+
+        drivers_actual = await get_drivers(carrier, driver_criteria, {'exclude_account_hold': False})
         drivers_actual = await get_hos_data_for_drivers(drivers_actual, carrier)
 
         # get loads for the given datef
@@ -755,9 +964,8 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
         # Only keep actionable_moves where the driver performed moves (driver _id in actual_plan_by_driver)
         actual_driver_ids = set(actual_plan_by_driver.keys())
         actionable_moves = [move for move in actionable_moves if move['move'] and move['move'][0].get('driver') in actual_driver_ids]
-        drivers = [driver for driver in drivers if driver.get('_id') in actual_driver_ids]
 
-        actual_plan_detailed_entries = create_plan_detailed_entries_compare(
+        actual_plan_detailed_entries, actual_bobtail_transfer_count, actual_chassis_transfer_count = create_plan_detailed_entries_compare(
             carrier=carrier,
             default_yard_locations=default_yard_locations,
             plan_by_driver=actual_plan_by_driver,
@@ -766,7 +974,8 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
             appointment_dict=appointment_dict,
             container_sizes_map=container_sizes_map,
             container_types_map=container_types_map,
-            equipment_validations=equipment_validations
+            equipment_validations=equipment_validations,
+            depot_locations=depot_locations
         )
 
         # add waiting time and travel time to actionable_moves
@@ -841,7 +1050,7 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
 
         optimal_plan_by_driver = group_and_sort_plan_by_driver(optimal_plan)
 
-        optimal_plan_detailed_entries = create_plan_detailed_entries_compare(
+        optimal_plan_detailed_entries, optimal_bobtail_transfer_count, optimal_chassis_transfer_count = create_plan_detailed_entries_compare(
             carrier=carrier,
             default_yard_locations=default_yard_locations,
             plan_by_driver=optimal_plan_by_driver,
@@ -850,7 +1059,8 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
             appointment_dict=appointment_dict,
             container_sizes_map=container_sizes_map,
             container_types_map=container_types_map,
-            equipment_validations=equipment_validations
+            equipment_validations=equipment_validations,
+            depot_locations=depot_locations
         )
 
         actual_total_moves = len(actionable_moves)
@@ -867,6 +1077,33 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
 
         actual_total_miles = actual_empty_miles + actual_trip_miles
         optimal_total_miles = optimal_empty_miles + optimal_trip_miles
+
+        kpi_data_actual = get_kpi_data_from_plan_entries(actual_plan_detailed_entries)
+        kpi_data_optimal = get_kpi_data_from_plan_entries(optimal_plan_detailed_entries)
+
+        actual_dual_transactions_analysis = kpi_data_actual.get('total_dual_transactions')
+        optimal_dual_transactions_analysis = kpi_data_optimal.get('total_dual_transactions')
+
+        actual_driver_trip_miles = kpi_data_actual.get('driver_trip_miles')
+        optimal_driver_trip_miles = kpi_data_optimal.get('driver_trip_miles')
+
+        actual_driver_bobtail_transfer = kpi_data_actual.get('driver_bobtail_transfer_count')
+        optimal_driver_bobtail_transfer = kpi_data_optimal.get('driver_bobtail_transfer_count')
+
+        actual_driver_support_moves = kpi_data_actual.get('driver_support_moves_count')
+        optimal_driver_support_moves = kpi_data_optimal.get('driver_support_moves_count')
+
+        actual_driver_chassis_pick = kpi_data_actual.get('driver_chassis_pick_count')
+        optimal_driver_chassis_pick = kpi_data_optimal.get('driver_chassis_pick_count')
+
+        actual_driver_chassis_termination = kpi_data_actual.get('driver_chassis_termination_count')
+        optimal_driver_chassis_termination = kpi_data_optimal.get('driver_chassis_termination_count')
+
+        actual_customer_chassis_pick = kpi_data_actual.get('customer_chassis_pick_count')
+        optimal_customer_chassis_pick = kpi_data_optimal.get('customer_chassis_pick_count')
+
+        actual_customer_chassis_termination = kpi_data_actual.get('customer_chassis_termination_count')
+        optimal_customer_chassis_termination = kpi_data_optimal.get('customer_chassis_termination_count')
 
         return {
             "status": "success",
@@ -891,11 +1128,59 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
                 "actual": actual_total_miles,
                 "optimal": optimal_total_miles
             },
+            "dual_transactions_analysis": {
+                "actual": actual_dual_transactions_analysis,
+                "optimal": optimal_dual_transactions_analysis
+            },
+            "driver_trip_miles": {
+                "actual": actual_driver_trip_miles,
+                "optimal": optimal_driver_trip_miles
+            },
+            "driver_bobtail_transfer": {
+                "actual": actual_driver_bobtail_transfer,
+                "optimal": optimal_driver_bobtail_transfer
+            },
+            "driver_support_moves": {
+                "actual": actual_driver_support_moves,
+                "optimal": optimal_driver_support_moves
+            },
             "comparison_data": {
                 "actual_plan_detailed_entries": actual_plan_detailed_entries,
                 "optimal_plan_detailed_entries": optimal_plan_detailed_entries,
                 "unplanned_moves": json.loads(json.dumps(get_unplanned_moves, default=str))
-            }
+            },
+            "no_of_support_moves": {
+                "actual": actual_bobtail_transfer_count + actual_chassis_transfer_count,
+                "optimal": optimal_bobtail_transfer_count + optimal_chassis_transfer_count
+            },
+            "bobtail_transfer_count": {
+                "actual": actual_bobtail_transfer_count,
+                "optimal": optimal_bobtail_transfer_count
+            },
+            "chassis_transfer_count": {
+                "actual": actual_chassis_transfer_count,
+                "optimal": optimal_chassis_transfer_count
+            },
+            "chassis_pick_count": {
+                "driver_wise_chassis_pick": {
+                    "actual": actual_driver_chassis_pick,
+                    "optimal": optimal_driver_chassis_pick
+                },
+                "customer_wise_chassis_pick": {
+                    "actual": actual_customer_chassis_pick,
+                    "optimal": optimal_customer_chassis_pick
+                }
+            },
+            "chassis_termination_count": {
+                "driver_wise_chassis_termination": {
+                    "actual": actual_driver_chassis_termination,
+                    "optimal": optimal_driver_chassis_termination
+                },
+                "customer_wise_chassis_termination": {
+                    "actual": actual_customer_chassis_termination,
+                    "optimal": optimal_customer_chassis_termination
+                }
+            },
         }
 
     except Exception as e:

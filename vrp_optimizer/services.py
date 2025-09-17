@@ -1,7 +1,16 @@
 
-from vrp_optimizer.helpers import minute_from_distance, calculate_distance_between_locations, get_yard_data, get_days_difference, get_minute_according_to_start_time
+import pytz
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
+
+from app.modules.optimizer.eta_service import estimate_move_start_time
+from vrp_optimizer.helpers import (
+    minute_from_distance,
+    calculate_distance_between_locations,
+    get_yard_data,
+    get_days_difference,
+    get_minute_according_to_start_time
+)
 
 def get_available_drivers_from_existing_driver_schedule(existing_driver_schedule, drivers):
     available_drivers = []
@@ -79,20 +88,87 @@ def get_total_journey_time(driver_default_start_location, driver_default_end_loc
 
     return total_journey_time
 
-def get_completion_time(load, timeZone, distance_unit, plan_date):
+def calculate_driver_minute_activity(driver_assigned_moves, timeZone, distance_unit, plan_date, plan_start_minute):
+    """Calculate start and end minutes for driver's assigned moves.
+    
+    Args:
+        driver_assigned_moves (list): List of moves assigned to driver
+        timeZone (str): Timezone string
+        distance_unit (str): Unit for distance calculation
+        plan_date (datetime): Reference date for calculations
+        
+    Returns:
+        tuple: (last_move_end_minute, first_move_start_minute)
+        
+    Raises:
+        ValueError: If driver_assigned_moves is empty
+        KeyError: If required move data is missing
+    """
+    try:
+        if not driver_assigned_moves:
+            print(f"No moves assigned to driver")
+            return 0, 0
+            
+        first_move = driver_assigned_moves[0]
+
+        # Get first move data
+        first_move_data = first_move.get('move', [])
+        if not first_move_data:
+            print(f"Missing move data for first move")
+            return 0, 0
+            
+        # Get start time of first move
+        move_start_time = first_move_data[0].get('arrived')
+        if not move_start_time:
+            start_time_window = estimate_move_start_time(first_move_data, timeZone, distance_unit)
+            if start_time_window[0]:
+                move_start_time = start_time_window[0].isoformat()
+            else:
+                move_start_time = (datetime.fromisoformat(plan_date.isoformat()).astimezone(pytz.timezone('UTC')).replace(hour=0, minute=0) + timedelta(minutes=plan_start_minute)).isoformat()
+
+        driver_assigned_moves[0]['move'][0]['arrived'] = driver_assigned_moves[0]['move'][0].get('arrived', move_start_time)
+        first_move_start_minute = get_minute_according_to_start_time(
+            time=move_start_time,
+            start_time=plan_date.isoformat(),
+            timeZone=timeZone
+        )
+
+        last_move_end_minute = first_move_start_minute
+
+        # calculate last move end time based on all assigned moves
+        for index, load in enumerate(driver_assigned_moves):
+            previous_event = None
+            if index != 0:
+                previous_event = driver_assigned_moves[index - 1].get('move', [])[-1]
+                move_copy = load.get('move', []).copy()
+                move_start_time = estimate_move_start_time(move_copy, timeZone, distance_unit)
+                if move_start_time[0]:
+                    load['move'][0]['arrived'] = load['move'][0].get('arrived', move_start_time[0].isoformat())
+
+            last_move_end_minute = get_completion_time(load, timeZone, distance_unit, plan_date, previous_event, start_time = last_move_end_minute)
+
+        return last_move_end_minute, first_move_start_minute, driver_assigned_moves
+    except (IndexError, KeyError, ValueError) as e:
+        print(f"Error calculating driver minute activity: {str(e)}")
+        return 0, 0
+    except Exception as e:
+        print(f"Unexpected error in calculate_driver_minute_activity: {str(e)}")
+        return 0, 0
+
+def get_completion_time(load, timeZone, distance_unit, plan_date, previous_event = None, start_time = None):
 
     move = [e for e in load.get('move', []) if not e.get('isVoidOut', False)]
 
-    load_assigned_date = load.get('load_assigned_date') if load.get('load_assigned_date') else plan_date.isoformat()
-    start_time = get_minute_according_to_start_time(
-        time=load_assigned_date, 
-        start_time=plan_date.isoformat(), 
-        timeZone=timeZone
-    )
+    if not start_time:
+        load_assigned_date = load.get('load_assigned_date') if load.get('load_assigned_date') else plan_date.isoformat()
+        start_time = get_minute_according_to_start_time(
+            time=load_assigned_date, 
+            start_time=plan_date.isoformat(), 
+            timeZone=timeZone
+        )
 
     clock = start_time
     for index, event in enumerate(move):
-        previous_event = None
         if index != 0:
             previous_event = move[index - 1]
 
@@ -144,7 +220,7 @@ def get_current_plan(all_assigned_moves):
         raise e
 
 
-def handle_assigned_moves(user_payload, drivers, default_yard_locations, additional_depot_locations, all_assigned_moves, plan_date):
+def handle_assigned_moves(user_payload, drivers, default_yard_locations, additional_depot_locations, all_assigned_moves, plan_date, plan_start_minute):
     """Process assigned moves and update driver availability
     
     1. Identifies drivers with active moves
@@ -166,82 +242,74 @@ def handle_assigned_moves(user_payload, drivers, default_yard_locations, additio
         # Process each driver's plan
         skipped_drivers = {}
         available_drivers = []
-        available_assigned_moves = []
         fixed_plan = {}
         
         for driver_id, driver_details in driver_data.items():
-            driver_plan = current_plan.get(driver_id, [])
+            try:
+                driver_plan = current_plan.get(driver_id, [])
 
-            if not driver_plan:
-                available_drivers.append(driver_details)
-                continue
+                if not driver_plan:
+                    available_drivers.append(driver_details)
+                    continue
 
 
-            driver_default_start_location = driver_details.get('manual_location', [0, 0])
-            driver_default_end_location = driver_details.get('manual_location', [0, 0])
+                driver_default_start_location = driver_details.get('manual_location', [0, 0])
+                driver_default_end_location = driver_details.get('manual_location', [0, 0])
 
-            # Skip drivers whose total journey exceeds shift hours
-            total_journey_time = get_total_journey_time(driver_default_start_location, driver_default_end_location, driver_plan, distance_unit)
-            if total_journey_time + 2 * 60 > driver_details.get('total_shift_hours', 14) * 60:
-                skipped_drivers[driver_id] = True
-                fixed_plan[driver_id] = driver_plan
-                continue
-            
-            # Separate active and assigned moves
-            driver_active_moves = [m for m in driver_plan if m.get('is_active_move')]
-            driver_assigned_moves = [m for m in driver_plan if not m.get('is_active_move')]
-            
-            # Process active moves if they exist
-            if driver_active_moves:
-                last_move = driver_active_moves[-1]
-                first_move = driver_active_moves[0]
-                
-                # Calculate time boundaries
-                last_move_end_minute = get_completion_time(last_move, timeZone, distance_unit, plan_date=plan_date)
-                first_move_start_minute = get_minute_according_to_start_time(
-                    time=first_move.get('move', [])[0].get('arrived', 0), 
-                    start_time=plan_date.isoformat(), 
-                    timeZone=timeZone
-                )
-                driver_minute_activity = max(last_move_end_minute - first_move_start_minute, 0)
-                
-                # Skip if driver exceeds time constraints
-
-                last_event = last_move.get('move', [])[-1]
-                location = get_yard_data(last_event)
-                distance_to_yard = calculate_distance_between_locations(location.get('start_loc', []), driver_default_end_location, distance_unit)
-                time_to_reach_to_yard = minute_from_distance(distance_to_yard, distance_unit)
-
-                time_to_start_shift = driver_details.get('start_minute', 0) - last_move_end_minute
-
-                if time_to_start_shift > 0:
-                    # If driver has done some moves before his shit starts, then plan from shift starting and consider the waiting time of driver as working time.
-                    driver_details['start_minute'] = driver_details.get('start_minute', 0)
-                    driver_details['max_working_minutes'] = int(driver_details.get('max_working_minutes', 14 * 60) - time_to_start_shift - driver_minute_activity)
-                else:
-                    # If driver has already worked upon some moves in the shift, then plan from the last move's ending minute 
-                    driver_details['start_minute'] = int(last_move_end_minute)
-                    driver_details['max_working_minutes'] = int(driver_details.get('max_working_minutes', 14 * 60) - driver_minute_activity)
-
-                is_shift_over = last_move_end_minute >= driver_details.get('end_minute', 24 * 60)
-                unable_to_reach_to_yard = driver_details.get('max_working_minutes', 14 * 60) < time_to_reach_to_yard + 2 * 60
-                
-                if is_shift_over or unable_to_reach_to_yard:
+                # Skip drivers whose total journey exceeds shift hours
+                total_journey_time = get_total_journey_time(driver_default_start_location, driver_default_end_location, driver_plan, distance_unit)
+                if total_journey_time + 2 * 60 > driver_details.get('total_shift_hours', 14) * 60:
                     skipped_drivers[driver_id] = True
                     fixed_plan[driver_id] = driver_plan
                     continue
                 
-                # Update driver details based on last active move
-                driver_details['start_location'] = last_event.get('customerId', None)
-                driver_details['depot_hash_key'] = location.get('hash_key')
+                # Separate active and assigned moves
+                driver_assigned_moves = [m for m in driver_plan if m.get('assigned_driver')]
                 
-                # Add last location as a depot
-                depot_locations[driver_details['start_location']] = location
-                fixed_plan[driver_id] = driver_active_moves
-            
-            # Add available moves and driver
-            available_assigned_moves.extend(driver_assigned_moves)
-            available_drivers.append(driver_details)
+                # Process active moves if they exist
+                if driver_assigned_moves:
+                    last_move_end_minute, first_move_start_minute, driver_assigned_moves = calculate_driver_minute_activity(driver_assigned_moves, timeZone, distance_unit, plan_date, plan_start_minute)
+                    
+                    driver_minute_activity = max(last_move_end_minute - first_move_start_minute, 0)
+                    # Skip if driver exceeds time constraints
+                    last_event = driver_assigned_moves[-1].get('move', [])[-1]
+                    location = get_yard_data(last_event)
+                    distance_to_yard = calculate_distance_between_locations(location.get('start_loc', []), driver_default_end_location, distance_unit)
+                    time_to_reach_to_yard = minute_from_distance(distance_to_yard, distance_unit)
+
+                    time_to_start_shift = driver_details.get('start_minute', 0) - last_move_end_minute
+
+                    if time_to_start_shift > 0:
+                        # If driver has done some moves before his shit starts, then plan from shift starting and consider the waiting time of driver as working time.
+                        driver_details['start_minute'] = driver_details.get('start_minute', 0)
+                        driver_details['max_working_minutes'] = int(driver_details.get('max_working_minutes', 14 * 60) - time_to_start_shift - driver_minute_activity)
+                    else:
+                        # If driver has already worked upon some moves in the shift, then plan from the last move's ending minute 
+                        driver_details['start_minute'] = int(last_move_end_minute)
+                        driver_details['max_working_minutes'] = int(driver_details.get('max_working_minutes', 14 * 60) - driver_minute_activity)
+
+                    is_shift_over = last_move_end_minute >= driver_details.get('end_minute', 24 * 60)
+                    unable_to_reach_to_yard = driver_details.get('max_working_minutes', 14 * 60) < time_to_reach_to_yard + 2 * 60
+                    
+                    if is_shift_over or unable_to_reach_to_yard:
+                        skipped_drivers[driver_id] = True
+                        fixed_plan[driver_id] = driver_plan
+                        continue
+                    
+                    # Update driver details based on last active move
+                    driver_details['start_location'] = last_event.get('customerId', None)
+                    driver_details['depot_hash_key'] = location.get('hash_key')
+                    driver_details['is_working'] = True
+                    driver_details['is_assigned_manually'] = True
+                    
+                    # Add last location as a depot
+                    depot_locations[driver_details['start_location']] = location
+                    fixed_plan[driver_id] = driver_assigned_moves
+                
+                # Add available moves and driver
+                available_drivers.append(driver_details)
+            except Exception as e:
+                continue
         
         # Convert depot locations dictionary to list
 
@@ -251,7 +319,7 @@ def handle_assigned_moves(user_payload, drivers, default_yard_locations, additio
 
         additional_depot_locations = list(depot_locations.values())
         
-        return available_drivers, available_assigned_moves, additional_depot_locations, fixed_plan
+        return available_drivers, additional_depot_locations, fixed_plan
     
     except Exception as e:
         print(f"Error in handle_assigned_moves: {str(e)}")

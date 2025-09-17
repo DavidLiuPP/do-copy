@@ -6,6 +6,7 @@ implementing proper error handling, input validation and performance optimizatio
 """
 import logging
 import copy
+import pytz
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from bson.objectid import ObjectId
@@ -88,8 +89,8 @@ async def get_loadcharges(criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 async def get_active_loads(
     carrier: str,
+    load_criteria: Dict[str, Any],
     limit: int = 10,
-    plan_branch: list = [],
     options: dict = {},
 ) -> List[Dict[str, Any]]:
     """
@@ -110,10 +111,12 @@ async def get_active_loads(
             "isDeleted": False
         }
 
-        if plan_branch:
+        if load_criteria.get('plan_branch'):
             query_filter["terminal"] = {
-                "$in": [ObjectId(branch) for branch in plan_branch]
+                "$in": [ObjectId(branch) for branch in load_criteria.get('plan_branch')]
             }
+        if load_criteria.get('route_type', []):
+            query_filter["routeType"] = { "$in": load_criteria.get('route_type') }
 
         if options.get('scheduled_moves_only', False):
             query_filter['$or'] = [
@@ -155,10 +158,9 @@ async def get_active_loads(
 
 async def get_loads_with_reference_numbers(
     carrier: str,
-    reference_numbers: List[str],
-    plan_branch: list = [],
+    load_criteria: Dict[str, Any],
     projection = LOAD_PROJECTION,
-    limit: int = 10
+    limit: int = 10,
 ) -> List[Dict[str, Any]]:
     """
     Get loads with reference numbers.
@@ -166,15 +168,18 @@ async def get_loads_with_reference_numbers(
     try:
         # if load_numbers is present get the load from that list
         query_filter = {
-            "reference_number": { "$in": reference_numbers },
+            "reference_number": { "$in": load_criteria.get('reference_numbers', []) },
             "carrier": ObjectId(carrier),
             "isDeleted": False,
         }
 
-        if len(plan_branch) > 0:
+        if len(load_criteria.get('plan_branch', [])) > 0:
             query_filter["terminal"] = {
-                "$in": [ObjectId(branch) for branch in plan_branch]
+                "$in": [ObjectId(branch) for branch in load_criteria.get('plan_branch', [])]
             }
+
+        if load_criteria.get('route_type', []):
+            query_filter["routeType"] = { "$in": load_criteria.get('route_type') }
 
         loads = await get_loads(query_filter, projection, limit)
         
@@ -204,9 +209,8 @@ async def get_loads_with_reference_numbers(
 
 async def get_available_loads(
     carrier: str,
-    reference_numbers: List[str],
-    plan_branch: list = [],
-    limit: int = 10
+    load_criteria: Dict[str, Any],
+    limit: int = 10,
 ) -> List[Dict[str, Any]]:
     """
     Get available loads for a given carrier.
@@ -214,10 +218,9 @@ async def get_available_loads(
     try:
         loads = await get_loads_with_reference_numbers(
             carrier=carrier,
-            reference_numbers=reference_numbers,
-            plan_branch=plan_branch,
+            load_criteria=load_criteria,
             projection=LOAD_PROJECTION_FOR_OPTIMIZER,
-            limit=limit
+            limit=limit,
         )
 
         # filter loads that are available or ready to be returned
@@ -233,27 +236,30 @@ async def get_available_loads(
             filtered_loads.append(load)
 
         for load in filtered_loads:
-            moves = get_moves_from_driver_order(load.get('driverOrder', []))
-            matched_moves = []
+            try:
+                moves = get_moves_from_driver_order(load.get('driverOrder', []))
+                matched_moves = []
 
-            for move in moves:
-                assigned_move = False
-                move_id = next((event.get('moveId') for event in move if not event.get('isVoidOut')), None)
-                
-                for event in move:
-                    if event.get('driver') and not event.get('isVoidOut'):
-                        assigned_move = True
-                        break
+                for move in moves:
+                    assigned_move = False
+                    move_id = next((event.get('moveId') for event in move if not event.get('isVoidOut')), None)
+                    
+                    for event in move:
+                        if event.get('driver') and not event.get('isVoidOut'):
+                            assigned_move = True
+                            break
 
-                if assigned_move:
-                    matched_moves.append(move_id)
+                    if assigned_move:
+                        matched_moves.append(move_id)
 
-            driver_order = load.get('driverOrder', [])
-            for event in driver_order:
-                if event.get('moveId') in matched_moves:
-                    event['is_manually_planned'] = True
+                driver_order = load.get('driverOrder', [])
+                for event in driver_order:
+                    if event.get('moveId') in matched_moves:
+                        event['is_manually_planned'] = True
 
-            load['driverOrder'] = driver_order
+                load['driverOrder'] = driver_order
+            except Exception as e:
+                logger.error(f"Error getting available load: {str(e)}")
 
         return filtered_loads
     
@@ -314,6 +320,7 @@ def get_moves_from_driver_order(driver_order, options=None):
     started_move_only = options.get('started_move_only', False)
     combined_move_only = options.get('combined_move_only', False)
     exclude_unplanned_completed_move = options.get('exclude_unplanned_completed_move', False)
+    exclude_drayos_carrier_move = options.get('exclude_drayos_carrier_move', True)
 
     routing_moves = []
     current_pos = 0
@@ -345,6 +352,7 @@ def get_moves_from_driver_order(driver_order, options=None):
             is_started_move = any(event.get('arrived', None) for event in _move)
             is_completed_move = all(event.get('departed', None) for event in _move)
             is_manually_planned = all(event.get('is_manually_planned', False) for event in _move)
+            is_drayos_carrier_move = all(event.get('drayosCarrier', None) for event in _move)
             should_include = True
             
             if exclude_combined_move:
@@ -367,7 +375,10 @@ def get_moves_from_driver_order(driver_order, options=None):
             
             if combined_move_only:
                 should_include = should_include and is_combined_trip
-                                
+            
+            if exclude_drayos_carrier_move:
+                should_include = should_include and not is_drayos_carrier_move
+            
             if should_include:
                 routing_moves.append(_move)
                 
@@ -380,18 +391,21 @@ def get_moves_from_driver_order(driver_order, options=None):
 
 async def get_assigned_moves(
     user_payload: Dict[str, Any],
+    load_criteria: Dict[str, Any],
     from_time: datetime,
     to_time: datetime,
     add_to_existing_plan: bool = False,
-    plan_branch: list = [],
     plan_drivers = None,
-    reference_numbers = []
 ) -> List[Dict[str, Any]]:
     """
     Get assigned moves for a given carrier and plan date.
     """
     try:
         carrier = user_payload.get('carrier')
+
+        reference_numbers = load_criteria.get('reference_numbers', [])
+        plan_branch = load_criteria.get('plan_branch', [])
+        route_type = load_criteria.get('route_type', [])
 
         # if load_numbers is present get the load from that list
         query_filter = {
@@ -434,6 +448,9 @@ async def get_assigned_moves(
         if len(reference_numbers) > 0:
             query_filter["reference_number"] = { "$in": reference_numbers }
 
+        if route_type:
+            query_filter["routeType"] = { "$in": route_type }
+
         loads = await get_loads(query_filter, LOAD_PROJECTION, 1000)
 
         # Get all loadIds from the loads
@@ -453,51 +470,60 @@ async def get_assigned_moves(
         all_loads = []
         
         for load in loads:
-            load_id = str(load["_id"])
-            
-            # Use dict lookup instead of loop
-            if load_id in charge_group_map:
-                load["revenue"] = charge_group_map[load_id]
+            try:
+                load_id = str(load["_id"])
+                
+                # Use dict lookup instead of loop
+                if load_id in charge_group_map:
+                    load["revenue"] = charge_group_map[load_id]
 
-            moves = get_moves_from_driver_order(load.get('driverOrder', []), { 'started_move_only': not add_to_existing_plan })
-            
-            # Pre-calculate date comparisons once
-            matched_moves = []
-            for move in moves:
-                valid_move = False
-                move_id = next((event.get('moveId') for event in move if not event.get('isVoidOut')), None)
-                for event in move:
-                    assigned_date = event.get('loadAssignedDate')
-                    is_driver_assigned = event.get('driver')
+                moves = get_moves_from_driver_order(load.get('driverOrder', []), { 'started_move_only': not add_to_existing_plan })
+                
+                # Pre-calculate date comparisons once
+                matched_moves = []
+                for move in moves:
+                    valid_move = False
+                    move_id = next((event.get('moveId') for event in move if not event.get('isVoidOut')), None)
+                    for event in move:
+                        try:
+                            assigned_date = event.get('loadAssignedDate')
+                            is_driver_assigned = event.get('driver')
 
-                    if plan_drivers:
-                        is_driver_assigned = event.get('driver') and event.get('driver') in plan_drivers
+                            if plan_drivers:
+                                is_driver_assigned = event.get('driver') and event.get('driver') in plan_drivers
 
-                    is_assigned_date_in_range = assigned_date and datetime.fromisoformat(assigned_date) >= from_time and datetime.fromisoformat(assigned_date) < to_time
-                    is_departed_date_in_range = event.get('departed') and datetime.fromisoformat(event.get('departed')) >= from_time and datetime.fromisoformat(event.get('departed')) < to_time
+                            is_assigned_date_in_range = assigned_date and datetime.fromisoformat(assigned_date) >= from_time and datetime.fromisoformat(assigned_date) < to_time
+                            is_departed_date_in_range = event.get('departed') and datetime.fromisoformat(event.get('departed')) >= from_time and datetime.fromisoformat(event.get('departed')) < to_time
 
-                    if ((is_assigned_date_in_range or is_departed_date_in_range) and
-                        not event.get('isVoidOut') and
-                        is_driver_assigned): # TODO: filter by driver
-                        valid_move = True
-                        break
-                if valid_move:
-                    matched_moves.append(move_id)
-            
-            if len(matched_moves) == 0:
+                            if ((is_assigned_date_in_range or is_departed_date_in_range) and
+                                not event.get('isVoidOut') and
+                                is_driver_assigned): # TODO: filter by driver
+                                valid_move = True
+                                break
+                        except Exception as e:
+                            logger.error(f"Error getting assigned move Error: {str(e)}")
+                            continue
+
+                    if valid_move:
+                        matched_moves.append(move_id)
+                
+                if len(matched_moves) == 0:
+                    continue
+
+                driver_order = load.get('driverOrder', [])
+                for event in driver_order:
+                    if event.get('moveId') in matched_moves:
+                        event['is_manually_planned'] = True
+                
+                load['driverOrder'] = driver_order
+
+                all_loads.append(load)
+
+            except Exception as e:
+                logger.error(f"Error getting assigned moves Error: {str(e)}")
                 continue
 
-            driver_order = load.get('driverOrder', [])
-            for event in driver_order:
-                if event.get('moveId') in matched_moves:
-                    event['is_manually_planned'] = True
-            
-            load['driverOrder'] = driver_order
-
-            all_loads.append(load)
-
         return all_loads
-
     except Exception as e:
         logger.error(f"Error getting assigned moves: {str(e)}")
         raise Exception(f"Failed to get assigned moves: {str(e)}")
@@ -522,7 +548,7 @@ async def get_completed_moves(
                 "$elemMatch": {
                     "departed": {
                         "$gte": from_time,
-                        "$lt": to_time
+                        "$lt": to_time + timedelta(minutes=180)
                     },
                     "isVoidOut": False
                 }
@@ -571,12 +597,12 @@ async def get_completed_moves(
                     departed = event.get('departed')
                     if (departed and
                         datetime.fromisoformat(departed) >= from_time and
-                        datetime.fromisoformat(departed) < to_time and
+                        datetime.fromisoformat(departed) < to_time + timedelta(minutes=180) and
                         not event.get('isVoidOut') and
                         (not plan_drivers or event.get('driver') in plan_drivers)):
                         event_completed_today_count += 1
 
-                valid_move = (event_completed_today_count / len(move)) == 1
+                valid_move = event_completed_today_count > 0
                 if valid_move:
                     is_any_event_not_departed = any(not event.get('departed') for event in move)
                     if not is_any_event_not_departed:

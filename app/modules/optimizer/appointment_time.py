@@ -7,6 +7,7 @@ from app.postgres_services.driver_schedule_service import store_driver_schedule,
 from app.modules.optimizer.constants import VALID_EVENT_TYPES
 from load_optimizer.get_optimal_plan_v2 import calculate_duration_from_distance, get_optimal_plan
 from load_optimizer.get_optimal_plan_v3 import get_optimal_plan_v3
+from vrp_optimizer.helpers import generated_criteria
 from vrp_optimizer.services import get_available_drivers_from_existing_driver_schedule
 
 def map_appointment_times_to_recommended_moves(
@@ -97,7 +98,7 @@ async def get_appointment_time(
         distance_unit = user_payload.get('distanceUnit', 'mi')
 
         # Get actionable moves
-        actionable_moves, _ = await map_loads_for_optimizer(
+        actionable_moves, _, _ = await map_loads_for_optimizer(
             user_payload=user_payload,
             loads=mapped_loads,
             scheduled_plans=recommended_moves,
@@ -108,8 +109,9 @@ async def get_appointment_time(
         if len(actionable_moves) <= 0:
             return recommended_moves
 
+        driver_criteria, _ = generated_criteria(plan_date=plan_date)
         # Get drivers and map with HOS
-        drivers = await get_drivers(carrier, plan_date)
+        drivers = await get_drivers(carrier, driver_criteria)
         drivers = await get_hos_data_for_drivers(drivers, carrier)
 
         existing_driver_schedule = {}
@@ -199,7 +201,7 @@ async def get_appointment_time_v3(
         distance_unit = user_payload.get('distanceUnit', 'mi')
 
         # Get actionable moves
-        actionable_moves, _ = await map_loads_for_optimizer(
+        actionable_moves, _, _ = await map_loads_for_optimizer(
             user_payload=user_payload,
             loads=mapped_loads,
             scheduled_plans=recommended_moves,
@@ -210,8 +212,9 @@ async def get_appointment_time_v3(
         if len(actionable_moves) <= 0:
             return recommended_moves
 
+        driver_criteria, _ = generated_criteria(plan_date=plan_date)
         # Get drivers and map with HOS
-        drivers = await get_drivers(carrier, plan_date)
+        drivers = await get_drivers(carrier, driver_criteria)
         drivers = await get_hos_data_for_drivers(drivers, carrier)
 
         driver_schedule = {}

@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Server settings
     PORT: int = 9000
+    NODE_ENV: str = "development"
     
     # Database settings
     MONGO_URL: str = "mongodb://localhost:27017"

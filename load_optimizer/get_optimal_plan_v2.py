@@ -6,8 +6,6 @@ from copy import deepcopy
 from line_profiler import LineProfiler
 
 from app.utils.distance_calc import calculate_distance_between_locations, calculate_duration_from_distance
-from app.postgres_services.driver_rotation_service import apply_driver_rotation_sorting
-from app.modules.optimizer.constants import CARRIER_CONFIGS
 
 profiler = LineProfiler()
 
@@ -631,21 +629,7 @@ async def get_optimal_plan(user_payload, moves, drivers, plan_date):
         drivers['id'] = drivers['_id']
         drivers['work_start'] = drivers['start_time'].apply(lambda x: datetime.strptime(x, "%H:%M").time() if pd.notna(x) else DEFAULT_WORK_START)
         drivers['work_end'] = drivers['end_time'].apply(lambda x: datetime.strptime(x, "%H:%M").time() if pd.notna(x) else DEFAULT_WORK_END)
-        drivers['per_mile_pay'] = pd.to_numeric(drivers['per_mile_pay'], errors='coerce')
         drivers['owner_score'] = pd.to_numeric(drivers['owner_score'], errors='coerce').fillna(5)
-        drivers['driver_score'] = 100 * drivers['per_mile_pay'] * (1 + (5 - drivers['owner_score']) / 5)
-        
-        # Apply driver rotation sorting based on carrier configuration
-        carrier = user_payload.get('carrier')
-        drivers_dict = drivers.to_dict('records')
-        
-        sorted_drivers_dict = await apply_driver_rotation_sorting(
-            drivers_dict, 
-            carrier, 
-            plan_date,
-            rotation_order=CARRIER_CONFIGS.get(carrier, {}).get('rotation_order', ['owner_score'])
-        )
-        drivers = pd.DataFrame(sorted_drivers_dict)
 
         # Add move_duration field for each move
         moves = pd.DataFrame(moves)
