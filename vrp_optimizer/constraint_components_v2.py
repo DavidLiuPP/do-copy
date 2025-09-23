@@ -53,6 +53,39 @@ def should_avoid_assignment(from_node, node, vehicle, base_distance):
     return False
 """,
         'priority': 8
+    },
+    {
+        'carrier': [],  # Empty list means apply to all carriers
+        'description': "Do not allow drivers to have multiple port pickups for import loads back to back",
+        'expression': """
+def should_avoid_assignment(from_node, node, vehicle, base_distance):
+    # Skip if coming from depot
+    if from_node.get('isDepot', False):
+        return False
+        
+    # Check if current node is an import port pickup
+    current_move_events = node.get('move', [])
+    is_current_import_pickup = any(
+        event.get('type') == 'PULLCONTAINER' and 
+        event.get('type_of_load') == 'IMPORT'
+        for event in current_move_events
+    )
+    
+    # Check if previous node was also an import port pickup
+    prev_move_events = from_node.get('move', [])
+    was_prev_import_pickup = any(
+        event.get('type') == 'PULLCONTAINER' and
+        event.get('type_of_load') == 'IMPORT'
+        for event in prev_move_events
+    )
+    
+    # Avoid back-to-back import port pickups
+    if was_prev_import_pickup and is_current_import_pickup:
+        return True
+        
+    return False
+""",
+        'priority': 7
     }
 ]
 
@@ -104,7 +137,7 @@ def get_node_penalty_from_rules(
     Evaluate applicable node constraint rules and compute total penalty.
     """
     try:
-        applicable_rules = [rule for rule in NODE_CONSTRAINT_RULES if carrier in rule.get("carrier", [])]
+        applicable_rules = [rule for rule in NODE_CONSTRAINT_RULES if not rule.get("carrier", []) or carrier in rule.get("carrier", [])]
         penalty = 0
 
         available_args = {

@@ -11,9 +11,6 @@ async def get_driver_history(carrier: str, plan_date: str, timeZone: str, vehicl
     Get driver history for the given carrier and plan date.
     """
     try:
-        if not CARRIER_CONFIGS.get(carrier, {}).get('ROTATION_ENABLED', False):
-            return {}
-
         driver_ids = [v['_id'] for v in vehicle_data]
         driver_owner_score = {v['_id']: (v['owner_score'], v['name']) for v in vehicle_data}
         

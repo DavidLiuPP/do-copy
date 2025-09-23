@@ -11,7 +11,6 @@ from vrp_optimizer.helpers import (
     show_time_from_minute_of_day,
     get_chassis_activity_between_moves,
     get_chassis_event_for_nodes,
-    get_cost_from_distance,
     get_zone_from_distance
 )
 from vrp_optimizer.routing_distance import (
@@ -49,6 +48,7 @@ class Optimizer:
         chassis_limits = {},
         driver_history = {},
         is_in_day_plan = False,
+        dispatch_plan_params = {}
     ):
         """
             Optimizer is a class that optimizes the moves across the drivers efficiently.
@@ -81,6 +81,7 @@ class Optimizer:
         self.assumptions = get_carrier_vrp_assumptions(carrier_id)
         self.carrier_id = carrier_id
         self.chassis_limits = chassis_limits
+        self.dispatch_plan_params = dispatch_plan_params
         
         self.distance_unit = distance_unit
         self.time_limit = time_limit
@@ -397,13 +398,16 @@ class Optimizer:
                     self.routing.solver().Add(self.routing.VehicleVar(index) != vehicle_id)
 
         for vehicle_id, vehicle in enumerate(self.VEHICLES):
-            if vehicle.get('is_assigned_manually', False):
+            if vehicle.get('is_assigned_manually', False) or self.is_in_day_plan:
                 self.routing.SetFixedCostOfVehicle(0, vehicle_id)
                 continue
 
             owner_score = vehicle.get('owner_score', 1)
             scale = MAX_OWNER_SCORE - owner_score + 1
             SCALED_VEHICLE_USE_PENALTY = scale * self.assumptions.get('VEHICLE_USE_PENALTY')
+
+            if self.dispatch_plan_params.get('distribute_work', False):
+                SCALED_VEHICLE_USE_PENALTY = 0
             
             # NEW: Calculate rotation penalty
             work_stat = self.driver_history.get(vehicle.get('_id'), {})
@@ -503,6 +507,8 @@ class Optimizer:
                     self.routing.ActiveVar(node_index) <= self.routing.ActiveVar(previous_node_index)
                 )
 
+
+        total_working_minutes = None
         # Set vehicle working hours, max working minutes, and max weight constraints
         for vehicle_id, vehicle in enumerate(self.VEHICLES):
             start_index = self.routing.Start(vehicle_id)
@@ -514,11 +520,17 @@ class Optimizer:
             self.time_dimension.CumulVar(start_index).SetRange(vehicle_start_minute, vehicle_end_minute)
             self.time_dimension.CumulVar(end_index).SetRange(vehicle_start_minute, vehicle_end_minute)
 
-            max_vehicle_start_minute = (
-                max(vehicle_start_minute, self.assumptions.get('PREFERRED_START_TIME') + 1) + 3 * 60 
-                if not vehicle.get('is_working', False) 
-                else (vehicle_start_minute + 30)
-            )
+            max_vehicle_start_minute = vehicle_end_minute
+            if vehicle.get('is_working', False):
+                # For working vehicles, add 30 min buffer to start time
+                max_vehicle_start_minute = vehicle_start_minute + 30
+            else:
+                # For non-working vehicles, calculate max start time with buffer
+                preferred_start = self.assumptions.get('PREFERRED_START_TIME') + 1
+                max_start = max(vehicle_start_minute, preferred_start)
+                buffer_time = 3 * 60 - self.assumptions.get('MAX_WAITING_TIME_BETWEEN_NODES', 60)
+                max_vehicle_start_minute = max(max_start + buffer_time, vehicle_start_minute + 1)
+
             self.time_dimension.SetCumulVarSoftUpperBound(start_index, max_vehicle_start_minute, self.assumptions.get('PENALTY_FOR_LATE_START'))
 
 
@@ -529,12 +541,16 @@ class Optimizer:
 
             # Max working minutes constraint
             working_minutes = self.time_dimension.CumulVar(end_index) - self.time_dimension.CumulVar(start_index)
-            if self.assumptions.get('MAXIMIZE_WORKING_MINUTES', True):
-                self.routing.AddVariableMaximizedByFinalizer(working_minutes)
+            if total_working_minutes is None:
+                total_working_minutes = working_minutes
+            else:
+                total_working_minutes += working_minutes
 
             # Limit working time to max allowed for this vehicle
             self.routing.solver().Add(working_minutes <= vehicle['max_working_minutes'])
-            # self.time_dimension.SetCumulVarSoftLowerBound(end_index, MIN_WORKING_MINUTES, PENALTY_FOR_LESS_WORKING_MINUTES)
+
+        if total_working_minutes and not self.dispatch_plan_params.get('distribute_work', False) and not self.is_in_day_plan: # If distribute work is true, then we don't need to limit the working minutes:
+            self.routing.AddVariableMaximizedByFinalizer(total_working_minutes)
 
     def add_distance_dimension(self):
         """
@@ -578,6 +594,48 @@ class Optimizer:
                 self.assumptions.get('MAX_EMPTY_MILES'), 
                 self.assumptions.get('PENALTY_FOR_EMPTY_MILES') # Penalty scales with total distance
             )
+    
+    def add_dual_transaction_constraints(self):
+        """
+        Add a dimension that counts dual transactions and maximizes them
+        """
+        def dual_transaction_callback(from_index, to_index):
+            from_node = self.manager.IndexToNode(from_index)
+            to_node = self.manager.IndexToNode(to_index)
+            
+            base_distance = self.DISTANCE_MATRIX[from_node][to_node]
+            
+            # Return 1 for dual transactions, 0 otherwise
+            return 1 if base_distance == 0 else 0
+        
+        callback_index = self.routing.RegisterTransitCallback(dual_transaction_callback)
+        
+        # Add dimension to track dual transactions
+        self.routing.AddDimension(
+            callback_index,
+            0,  # null slack
+            1000,  # max cumulative dual transactions per vehicle
+            True,  # start at zero
+            'DualTransactions'
+        )
+
+        dual_transaction_dimension = self.routing.GetDimensionOrDie('DualTransactions')
+        
+        # Create a sum variable for all vehicles
+        total_dual_transactions = None
+        for vehicle_id in range(len(self.VEHICLES)):
+            end_index = self.routing.End(vehicle_id)
+            vehicle_dual_transactions = dual_transaction_dimension.CumulVar(end_index)
+            
+            if total_dual_transactions is None:
+                total_dual_transactions = vehicle_dual_transactions
+            else:
+                total_dual_transactions += vehicle_dual_transactions
+        
+        # Maximize the TOTAL across all vehicles
+        if total_dual_transactions is not None:
+            self.routing.AddVariableMaximizedByFinalizer(total_dual_transactions)
+
 
     def add_chassis_limit(self):
         for chassis, arcs in self.hook_arcs.items():
@@ -684,11 +742,15 @@ class Optimizer:
                     max_distance = to_node_spec.get('max_distance', 0)
 
                     # get the cost from the distance
-                    cost = get_cost_from_distance(base_distance)
+                    cost = int(base_distance)
+                    if (base_distance > self.assumptions.get('MAX_EMPTY_MILES')) \
+                        or (to_node_spec.get('isDepot') and base_distance > (self.assumptions.get('MAX_EMPTY_MILES') / 2)):
+                        # If the path is longer than the max empty miles, then we should skip that path
+                        cost = self.assumptions.get('SKIP_NODE_PENALTY') * 2 + 1
 
                     # Penalties for zone repetition and variety
                     work_stats = self.driver_history.get(vehicle.get('_id'), {})
-                    if work_stats and max_distance > 0 and cost > 0:
+                    if work_stats and max_distance > 0 and base_distance > 0:
                         zone = get_zone_from_distance(max_distance)
                         zone_penalty = self._calculate_zone_penalty(work_stats, zone)
                         cost += zone_penalty
@@ -702,6 +764,14 @@ class Optimizer:
                         base_distance=base_distance
                     )
 
+                    if self.dispatch_plan_params.get('distribute_work', False):
+                        # Reduce penalty for first visits to encourage more assignments.
+                        if from_node_spec.get('isDepot') and not to_node_spec.get('isDepot'):
+                            cost = max(min(base_distance, 5), cost - 100)
+
+                    if base_distance > 0:
+                        cost += self.assumptions.get('NON_DUAL_MOVE_PENALTY')
+                    
                     return cost
                 except Exception as e:
                     print(f"Error in distance callback: {e}")
@@ -752,8 +822,8 @@ class Optimizer:
         """
         self.search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         self.search_parameters.first_solution_strategy = self.ALGORITHM # PATH_MOST_CONSTRAINED_ARC, PATH_CHEAPEST_ARC, AUTOMATIC, PARALLEL_CHEAPEST_INSERTION
-        if not self.is_in_day_plan: 
-            self.search_parameters.local_search_metaheuristic = self.METAHEURISTIC_STRATEGY # TABU_SEARCH, SIMULATED_ANNEALING, GUIDED_LOCAL_SEARCH
+        # if not self.is_in_day_plan: 
+        #     self.search_parameters.local_search_metaheuristic = self.METAHEURISTIC_STRATEGY # TABU_SEARCH, SIMULATED_ANNEALING, GUIDED_LOCAL_SEARCH
         self.search_parameters.time_limit.seconds = int(self.time_limit)
         self.search_parameters.log_search = True
 
@@ -982,6 +1052,7 @@ class Optimizer:
             self.add_time_dimension_constraints()
             self.add_distance_dimension()
             self.add_distance_dimension_constraints()
+            self.add_dual_transaction_constraints()
             if self.chassis_limits:
                 self.add_chassis_limit()
             self.add_arc_constraint_per_vehicle()

@@ -14,7 +14,8 @@ async def save_summary_of_optimal_plan(
     plan_branch = [],
     shift = None,
     driver_tags = [],
-    route_type = []
+    route_type = [],
+    dispatch_plan_params = {}
 ):
     # Define column order as a constant
     # Define fields for optimizer plans table
@@ -64,6 +65,9 @@ async def save_summary_of_optimal_plan(
         "driver_tags": '{' + ','.join(driver_tags) + '}',  # Format as Postgres array literal
         "route_type": '{' + ','.join(route_type) + '}',  # Format as Postgres array literal
     }
+
+    if dispatch_plan_params:
+        optimal_plan_values['dispatch_plan_params'] = dispatch_plan_params
 
     all_fields = optimal_plan_values.keys()
 

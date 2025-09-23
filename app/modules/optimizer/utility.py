@@ -3,12 +3,14 @@ import pytz
 import json
 from copy import deepcopy
 from datetime import datetime, timedelta, date
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.modules.optimizer.constants import EVENT_TIME_MAP, CARRIER_CONFIGS, YARD_ALLOWED_OPERATIONS
 from app.utils.distance_calc import calculate_distance_between_locations
 from app.services.redis_service import get_shift_times
 from app.postgres_services.drayage_intelligence_service import get_drayage_intelligence
+from app.postgres_connection import get_postgres_client
+from app.synced_db_connection import get_synced_db_client
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +211,7 @@ def check_move_validity(
         raise
 
 
-def modify_move_for_invalid_move(
+async def modify_move_for_invalid_move(
     user_payload: Dict[str, Any], 
     move: List[Dict[str, Any]], 
     type: str, 
@@ -260,16 +262,18 @@ def modify_move_for_invalid_move(
                 ref_location_to_drop = last_event
 
             # Get appropriate yard based on configuration
-            nearest_yard_location = get_nearest_yard_location(
-                yard_locations, 
-                ref_location_to_drop, 
-                distance_unit,
+            nearest_yard_location = await get_recommended_yard_location(
+                move,
+                drop_event_index=event_index,
+                yard_locations=yard_locations, 
+                location=ref_location_to_drop, 
+                distance_unit=distance_unit,
                 carrier_id=carrier_id,
                 load=load,
                 drayage_config=drayage_config  # Pass config to avoid another DB call
             )
             
-            if last_event.get('customerId') == nearest_yard_location.get('customerId'):
+            if len(copied_move) == 1 and last_event.get('customerId') == nearest_yard_location.get('customerId'):
                 return move
 
             copied_move.append({
@@ -512,6 +516,153 @@ def get_nearest_yard_location(
         # Safe fallback to first available yard
         return yard_locations[0] if yard_locations else None
 
+async def get_recommended_yard_location(
+    move: List[Dict[str, Any]],
+    drop_event_index: int,
+    yard_locations: List[Dict[str, Any]],
+    location: Dict[str, Any],
+    distance_unit: str = 'mi',
+    carrier_id: str = None,
+    load: Dict[str, Any] = None,
+    drayage_config: Dict[str, Any] = None
+) -> Dict[str, Any]:
+    """
+    Get the recommended yard location for a given location.
+    First tries to get yard recommendations from database based on move events,
+    then falls back to nearest yard if no recommendations found.
+    """
+    try:
+        # Try to get yard recommendations from database
+        from_location, to_location, recommendation_type = analyze_move_pattern(move, drop_event_index)
+        
+        recommended_yard_customer_id = await get_yard_recommendation_from_db(from_location, to_location, recommendation_type, carrier_id, yard_locations)
+        
+        synced_db = get_synced_db_client()
+        pool = await synced_db.get_pool()
+        
+        sql_query = "SELECT * FROM public.customers where carrier = $1 and _id=$2"
+        
+        recommended_yard = None
+        async with pool.acquire() as conn:
+            record = await conn.fetchrow(
+                sql_query, 
+                carrier_id, 
+                recommended_yard_customer_id
+            )
+            
+            if record:
+                recommended_yard = {
+                    "customerId": record.get("_id", ""),
+                    "company_name": record.get("company_name", ""),
+                    "address": {
+                        "lat": record.get("lat", ""),
+                        "lng": record.get("lng", ""),
+                        "address": record.get("address", ""),
+                        "city": record.get("city", ""),
+                        "state": record.get("state", ""),
+                        "country": record.get("country", ""),
+                        "zip_code": record.get("zip_code", ""),
+                    },
+                    "city": record.get("city", ""),
+                    "state": record.get("state", ""),
+                    "country": record.get("country", ""),
+                    "zip_code": record.get("zip_code", ""),
+                    "is_chassis_pick_allowed": record.get("is_chassis_pick_allowed", True) if record else True,
+                    "is_chassis_termination_allowed": record.get("is_chassis_termination_allowed", True) if record else True,
+                    "allowed_operations": YARD_ALLOWED_OPERATIONS
+                }
+            
+        if not recommended_yard:
+            # Fallback to nearest yard if no recommendations found
+            recommended_yard = get_nearest_yard_location(yard_locations, location, distance_unit, carrier_id, load, drayage_config)        
+        return recommended_yard
+        
+    except Exception as e:
+        logger.error(f"Error in get_recommended_yard_location: {str(e)}")
+        # Safe fallback to nearest yard
+        return get_nearest_yard_location(yard_locations, location, distance_unit, carrier_id, load, drayage_config)
+    
+def analyze_move_pattern(move: List[Dict[str, Any]], drop_event_index: int) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Analyze move events to determine recommendation pattern.
+    Returns (recommendation_type, from_customer_id, to_customer_id)
+    """
+    try:
+        from_event = move[drop_event_index-1]
+        to_event = move[drop_event_index]
+        
+        from_location = from_event.get('customerId')
+        to_location = to_event.get('customerId')
+        
+        # INSERT_YOUR_CODE
+        recommendation_type = None
+
+        if from_event.get('type') == 'PULLCONTAINER' and to_event.get('type') == 'DELIVERLOAD':
+            recommendation_type = 'PULL_DELIVER'
+        elif from_event.get('type') == 'DELIVERLOAD' and to_event.get('type') == 'RETURNCONTAINER':
+            recommendation_type = 'DELIVER_RETURN'
+        elif from_event.get('type') == 'HOOKCONTAINER' and to_event.get('type') == 'RETURNCONTAINER':
+            recommendation_type = 'HOOK_RETURN'
+        
+        return from_location, to_location, recommendation_type
+    except Exception as e:
+        logger.error(f"Error in analyze_move_pattern: {str(e)}")
+        return None, None, None
+
+async def get_yard_recommendation_from_db(
+    from_location: str,
+    to_location: str,
+    recommendation_type: str,
+    carrier_id: str, 
+    yard_locations: List[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """
+    Get yard recommendation from database based on move events.
+    Analyzes the move pattern and looks up recommendations in yard_recommendations table.
+    """
+    try:
+        if not from_location or not to_location or not carrier_id or not recommendation_type:
+            return None
+        
+        # Query yard recommendations from database
+        postgres = get_postgres_client()
+        pool = await postgres.get_pool()
+        
+        query = """
+        SELECT 
+            recommended_event_type,
+            recommended_customer_id,
+            event_counts
+        FROM public.yard_recommendations 
+        WHERE carrier = $1 
+        AND recommendation_type = $2 
+        AND from_customer_id = $3 
+        AND to_customer_id = $4
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+        
+        async with pool.acquire() as conn:
+            record = await conn.fetchrow(
+                query, 
+                carrier_id, 
+                recommendation_type, 
+                from_location, 
+                to_location
+            )
+            
+            if not record:
+                logger.debug(f"No yard recommendation found for pattern: {recommendation_type} {from_location} -> {to_location}")
+                return None
+            
+            # Find the recommended yard in available yard locations
+            recommended_customer_id = record['recommended_customer_id']
+            
+            return recommended_customer_id
+                
+    except Exception as e:
+        logger.error(f"Error getting yard recommendation from database: {str(e)}")
+        return None
 
 def get_drop_yard_east_west_split(
     yard_locations: List[Dict[str, Any]],

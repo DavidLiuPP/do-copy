@@ -76,6 +76,7 @@ async def generate_driver_plan(request: Request, background_tasks: BackgroundTas
     """
     try:
         user_payload = request.state.user
+        user_payload = {'carrier': '60196e05993170084efd0f4d', 'userId': '60196e05993170084efd0f4d'}
         carrier = user_payload.get('carrier')
         if not carrier:
             return JSONResponse(
@@ -92,9 +93,11 @@ async def generate_driver_plan(request: Request, background_tasks: BackgroundTas
         shift = body.get('shift', None)
         driver_tags = body.get('driver_tags', [])
         route_type = body.get('route_type', [])
+        previous_day_driver_schedules = body.get('previous_day_driver_schedules', [])
 
         is_approved_move_ids_provided = 'approved_modified_move_ids' in body
         approved_modified_move_ids = body.get('approved_modified_move_ids', [])
+        dispatch_plan_params = body.get('dispatch_plan_params', {})
         
         result = await get_optmized_driver_plan(
             user_payload=user_payload, 
@@ -108,7 +111,9 @@ async def generate_driver_plan(request: Request, background_tasks: BackgroundTas
             shift=shift,
             background_tasks=background_tasks,
             driver_tags=driver_tags,
-            route_type=route_type
+            route_type=route_type,
+            previous_day_driver_schedules=previous_day_driver_schedules,
+            dispatch_plan_params=dispatch_plan_params
         )
 
         response = { "result": result, "status": "success" }

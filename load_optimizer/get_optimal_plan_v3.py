@@ -87,7 +87,8 @@ async def get_optimal_plan_v3(
     behind_schedule_moves: List[Dict[str, Any]] = [],
     is_in_day_plan: bool = False,
     driver_schedules: List[Dict[str, Any]] = [],
-    invalid_moves: List[Dict[str, Any]] = []
+    invalid_moves: List[Dict[str, Any]] = [],
+    dispatch_plan_params: Dict[str, Any] = {}
 ):
     try:
         if len(drivers) == 0:
@@ -257,12 +258,10 @@ async def get_optimal_plan_v3(
                 filtered_vehicle_data = [v for v in vehicle_data if not v.get('skip_driver_for_optimizer', False)]
 
                 # Fetch driver history for rotating the work
-                driver_history = {}
-                if CARRIER_CONFIG.get('ROTATION_ENABLED', False):
-                    start_history_time = time.time()
-                    driver_history = await get_driver_history(carrier, converted_plan_date, timeZone, vehicle_data)
-                    end_history_time = time.time()
-                    print(f"Time taken to get driver history: {end_history_time - start_history_time} seconds")
+                start_history_time = time.time()
+                driver_history = await get_driver_history(carrier, converted_plan_date, timeZone, vehicle_data)
+                end_history_time = time.time()
+                print(f"Time taken to get driver history: {end_history_time - start_history_time} seconds")
 
                 moves_copy = deepcopy(moves)
                 d_schedule = {}
@@ -302,7 +301,8 @@ async def get_optimal_plan_v3(
                     max_time_dimension_minutes = max_time_dimension_minutes,
                     chassis_limits = mapped_chassis_limits,
                     driver_history = driver_history,
-                    is_in_day_plan=is_in_day_plan
+                    is_in_day_plan=is_in_day_plan,
+                    dispatch_plan_params=dispatch_plan_params
                 )
                 
                 # Run the OR-Tools optimization in a thread pool to prevent blocking
@@ -375,6 +375,7 @@ async def get_optimal_plan_v3(
         }
     except Exception as e:
         logger.error(e)
+        raise Exception(f"Failed to get optimal plan v3: {str(e)}")
 
 async def map_actionable_moves_for_optimizer(
     user_payload: Dict[str, Any],    

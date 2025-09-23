@@ -81,29 +81,6 @@ def get_minute(date, timezone):
     return dt.hour * 60 + dt.minute
 
 
-def get_cost_from_distance(distance):
-    try:
-        cost = 0
-        remaining_distance = distance
-
-        for i in range(4):
-            if remaining_distance <= 0:
-                break
-
-            segment = min(remaining_distance, 10)
-            multiplier = i + 1  # starts from 1
-            cost += segment * multiplier
-            remaining_distance -= segment
-
-        if remaining_distance > 0:
-            cost = SKIP_NODE_PENALTY
-
-        return int(cost)
-    except Exception as e:
-        print(e)
-        return 0
-
-
 def get_yard_data(yard_locations):
 
     lat = yard_locations.get('address', {}).get('lat', 0)

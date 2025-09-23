@@ -138,8 +138,10 @@ async def get_optmized_driver_plan(
     behind_schedule_moves: list = [],
     is_in_day_plan: bool = False,
     driver_schedules: List[Dict[str, Any]] = [],
+    previous_day_driver_schedules: List[Dict[str, Any]] = [],
     driver_tags: list = [],
-    route_type: list = []
+    route_type: list = [],
+    dispatch_plan_params: Dict[str, Any] = {}
 ) -> Dict[str, Any]:
     is_manage_plan_status = True if not is_in_day_plan and save_plan else False
     try:
@@ -180,12 +182,11 @@ async def get_optmized_driver_plan(
         drivers = await get_drivers(
             carrier=carrier,
             driver_criteria=driver_criteria,
-            settings={'exclude_account_hold': True}
+            settings={'exclude_account_hold': True},
+            previous_day_driver_schedules=previous_day_driver_schedules
         )
 
         if not drivers:
-            if is_manage_plan_status:
-                await manage_generate_plan_status(carrier, plan_date, "ERROR", plan_branch)
             raise Exception("No drivers found for the given date")
 
         # map drivers with HOS
@@ -261,7 +262,8 @@ async def get_optmized_driver_plan(
             behind_schedule_moves=behind_schedule_moves,
             is_in_day_plan=is_in_day_plan,
             driver_schedules=driver_schedules,
-            invalid_moves=invalid_moves
+            invalid_moves=invalid_moves,
+            dispatch_plan_params=dispatch_plan_params
         )
         optimal_plan = optimizer_output['optimal_plan']
         invalid_moves = optimizer_output['invalid_moves']
@@ -293,7 +295,8 @@ async def get_optmized_driver_plan(
                     shift=shift,
                     background_tasks=background_tasks,
                     driver_tags=driver_tags,
-                    route_type=route_type
+                    route_type=route_type,
+                    dispatch_plan_params=dispatch_plan_params
                 )
                 if is_manage_plan_status:
                     await manage_generate_plan_status(carrier, plan_date, "COMPLETED", plan_branch, plan_id)
@@ -309,13 +312,10 @@ async def get_optmized_driver_plan(
                 print(f"Time taken to save plan details: {end_save_plan_details_time - start_save_plan_details_time} seconds")
             else:
                 if is_manage_plan_status:
-                    logger.info(f"Background task: No optimal plan generate for {plan_date} and carrier {carrier}" )
-                    await manage_generate_plan_status(carrier, plan_date, "ERROR", plan_branch)
+                    raise Exception("Plan not saved")
         except Exception as e:
-            if is_manage_plan_status:
-                logger.info(f"Background task: Failed to save plan details {plan_date} and carrier {carrier}" )
-                await manage_generate_plan_status(carrier, plan_date, "ERROR", plan_branch)
             logger.error("Failed to save plan details", e)
+            raise Exception(f"Failed to save plan details: {str(e)}")
 
         return {
             "carrier": carrier,
@@ -328,7 +328,6 @@ async def get_optmized_driver_plan(
     except Exception as e:
         logger.error(e)
         if is_manage_plan_status:
-            logger.info(f"Background task: Failed to generate optimal plan for {plan_date} and carrier {carrier}" )
             await manage_generate_plan_status(carrier, plan_date, "ERROR", plan_branch)
         raise e
 

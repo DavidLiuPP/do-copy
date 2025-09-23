@@ -47,22 +47,15 @@ CHASSIS_YARD_CONFIGS = {
 CARRIER_CONFIGS = {
     # Tripoint Intermodal Services
     '63039f613d347315e2a02a2d': {
-        'ROTATION_ENABLED': True,
         'vrp_assumptions': {
             'PENALTY_FOR_COMPANY_DRIVER_LONG_DISTANCE_MOVE': 1000
         }
     },
     # Quality Container
     '653a6813f7eb901615236816': {
-        'ROTATION_ENABLED': True,
         'IMPORT_DELIVERLOAD_GRACE_TIME': 45,
         'use_nearest_to_delivery_yard': True,
         'allow_to_plan_following_moves': True,
-        'vrp_assumptions': {
-            'VEHICLE_USE_PENALTY': 0,
-            'MAXIMIZE_WORKING_MINUTES': False,
-            'MAX_WAITING_TIME_BETWEEN_NODES': 30  # in minutes
-        },
         'last_visit_locations': [
             '669e99cbace8bcfd64a5b656', # SLG
             '661800ed8b11526e42dcf208', # LINEAGE LOGISTICS #2
@@ -85,7 +78,6 @@ CARRIER_CONFIGS = {
     },
     # DILE-Trucking
     '623a1a0ae85bec6eacd5096d': {
-        'ROTATION_ENABLED': True,
         'allow_to_plan_following_moves': True
     },
     
@@ -109,8 +101,6 @@ CARRIER_CONFIGS = {
             '6500ac575b4e7715cea4a425', # CN CALGARY
             '650fd61b6cc5eb15f2d90f3f' # CN EDMONTON      
         ],
-        
-        'ROTATION_ENABLED': True,
         'allow_to_plan_following_moves': True
     }
 }

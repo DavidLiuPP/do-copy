@@ -114,7 +114,7 @@ async def map_actionable_moves(
                         })
                         continue
 
-                    modified_move = modify_move_for_invalid_move(user_payload, actionable_move, event_type, 'end', load_copy)
+                    modified_move = await modify_move_for_invalid_move(user_payload, actionable_move, event_type, 'end', load_copy)
                     modified_move = populate_appointment_times_to_events(
                         user_payload, [load_copy], modified_move, converted_plan_date, 
                         time_prediction, location_office_hours
@@ -221,7 +221,7 @@ async def map_actionable_combined_trips(
                 load_with_info['load_assigned_date'] = actionable_move[0].get('loadAssignedDate')
 
                 # all the events in actionabe_move should have customerId
-                are_locations_specified = all(event.get('customerId') for event in actionable_move)
+                are_locations_specified = all(event.get('customerId') for event in actionable_move) if not trip.get('driverId', None) else True
                 if are_locations_specified:
                     actionable_trips.append(load_with_info)
             except Exception as e:

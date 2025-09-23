@@ -1,6 +1,6 @@
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 import uuid
 from typing import Dict, Any
@@ -97,7 +97,8 @@ async def save_plan_details(
     shift = None,
     background_tasks: BackgroundTasks = None,
     driver_tags = [],
-    route_type = []
+    route_type = [],
+    dispatch_plan_params = {}
 ):
     # Save Summary of optimal_plan to optimizer_plans
 
@@ -114,7 +115,8 @@ async def save_plan_details(
             plan_branch=plan_branch,
             shift=shift,
             driver_tags=driver_tags,
-            route_type=route_type
+            route_type=route_type,
+            dispatch_plan_params=dispatch_plan_params
         )
         plan_id = summary_of_optimal_plan.get('id', None)
     except Exception as e:
@@ -172,6 +174,8 @@ def convert_uuid(obj):
         return str(obj)
     elif isinstance(obj, datetime):
         return obj.isoformat()
+    elif isinstance(obj, date):
+        return obj.strftime('%Y-%m-%d')
     elif isinstance(obj, dict):
         return {k: convert_uuid(v) for k, v in obj.items()}
     elif isinstance(obj, (list, tuple)):

@@ -71,10 +71,10 @@ async def get_carrier_settings(carrier_id: str) -> Optional[Dict[str, Any]]:
             # Handle case where set_carrier_settings returns False (error case) or None (not found)
             if settings_json is False:
                 logger.error(f"Failed to set carrier settings for carrier_id: {carrier_id}")
-                return None
+                return {}
             elif settings_json is None:
                 logger.warning(f"No carrier settings found for carrier_id: {carrier_id}")
-                return None
+                return {}
                 
             return settings_json
 
@@ -92,16 +92,16 @@ async def get_carrier_settings(carrier_id: str) -> Optional[Dict[str, Any]]:
         # Handle case where set_carrier_settings returns False (error case) or None (not found)
         if settings_json is False:
             logger.error(f"Failed to set carrier settings for carrier_id: {carrier_id}")
-            return None
+            return {}
         elif settings_json is None:
             logger.warning(f"No carrier settings found for carrier_id: {carrier_id}")
-            return None
+            return {}
             
         return settings_json
     
     except Exception as e:
         logger.error(f"Error getting carrier settings from Redis: {str(e)}")
-        return None
+        return {}
 
 async def set_default_yard_location(carrier_id: str, location: Dict[str, Any]) -> bool:
     """
@@ -194,8 +194,8 @@ async def get_default_yard_location(carrier_id: str, get_from_db: bool = False, 
                         
                     return default_yard_locations
     except Exception as e:
-        logger.error(f"Error getting default yard location from Redis: {str(e)}")
-        return None
+        logger.error(f"Error getting default yard location: {str(e)}")
+        raise Exception(f"Failed to get default yard location: {str(e)}")
     
 
 

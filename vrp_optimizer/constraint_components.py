@@ -163,7 +163,12 @@ CONSTRAINT_RULES: List[Dict[str, Any]] = [
         'operator': 'REQUIRES_IF_TRUE',
         'vehicle_field': 'street_turn',
     },
-    
+    {
+        'constraint_name': 'preferred_container_types',
+        'node_field': 'containerType',
+        'operator': 'IN',
+        'vehicle_field': 'preferred_container_types',
+    },
 ]
 
 def operator_fn(operator: str, left_val, right_val) -> bool:

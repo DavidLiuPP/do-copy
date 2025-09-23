@@ -1,15 +1,21 @@
 import logging
+import os
+import pandas as pd
 from typing import Dict, Any, List
 from app.synced_db_connection import get_synced_db_client
 from app.services.redis_service import get_default_yard_location
 import json
+
+from load_optimizer.get_optimal_plan_v3 import get_minute_from_time
+from vrp_optimizer.helpers import show_time_from_minute_of_day
 
 logger = logging.getLogger(__name__)
 
 async def get_drivers(
     carrier: str,
     driver_criteria: Dict[str, Any],
-    settings: Dict[str, Any] = {'exclude_account_hold': True}
+    settings: Dict[str, Any] = {'exclude_account_hold': True},
+    previous_day_driver_schedules: List[Dict[str, Any]] = []
 ) -> List[Dict[str, Any]]:
     """
     Retrieve driver data from PostgreSQL for a given carrier and driver ID.
@@ -109,17 +115,58 @@ async def get_drivers(
             driver_list_keys = ['pickup_prefferred', 'preferred_states', 'preferred_distance', 'new_terminal',
                                 'truck_type', 'tags', 'preferred_types_of_load', 'delivery_prefferred',
                                 'ower_weight_states', 'profile_type', 'working_days_hours', 'preferred_move_types',
-                                'over_weight_country', 'restricted_locations', 'preferred_chassis_types', 'preferred_country']
+                                'over_weight_country', 'restricted_locations', 'preferred_chassis_types', 'preferred_country','preferred_container_types']
 
+            csv_filename = f'driver_features_{carrier}.csv'
+            csv_path = csv_filename  # File in root directory
+            
+            # Check if CSV exists
+            if not os.path.exists(csv_path):
+                print(f"Warning: CSV file '{csv_path}' not found in root directory. Returning drivers without modifications.")
+                return drivers
+
+            # Load CSV data
+            df = pd.read_csv(csv_path)
+            
+            # Create a lookup dictionary for quick access by driver ID
+            csv_lookup = {}
+            for _, row in df.iterrows():
+                driver_id = str(row['driver'])
+                csv_lookup[driver_id] = {
+                    'min_mileage': float(row['min_mileage']),
+                    'max_mileage': float(row['max_mileage']),
+                    'work_day_start_time': str(row['work_day_start_time']),
+                    'work_day_end_time': str(row['work_day_end_time']),
+                    'depot_customer_id': str(row['start_customerid']),
+                    'lat': float(row['lat']),
+                    'lng': float(row['lng'])
+                }
+            
+            # Modify each driver with CSV data
 
             for driver in drivers:
                 # manage driver owner_score and depot location
                 driver['owner_score'] = driver.get('driver_ranking', 5)
 
-                driver['depot_location'] = {
-                    "lat": driver.get('depot_lat', 0),
-                    "lng": driver.get('depot_lng', 0),
-                }
+                # Get driver ID - adjust this based on your driver object structure
+                # It might be driver['id'], driver['_id'], driver['driver_id'], or driver.id if it's an object
+                driver_id = str(driver.get('id') or driver.get('_id') or driver.get('driver_id'))
+                
+                # If this driver exists in CSV, update their fields
+                if driver_id in csv_lookup:
+                    csv_data = csv_lookup[driver_id]
+                    
+                    # Update the driver fields with CSV values
+                    driver['min_mileage'] = csv_data['min_mileage']
+                    driver['max_mileage'] = csv_data['max_mileage']
+                    driver['work_day_start_time'] = csv_data['work_day_start_time']
+                    driver['work_day_end_time'] = csv_data['work_day_end_time']
+                    driver['depot_customer_id'] = csv_data['depot_customer_id']
+
+                    driver['depot_location'] = {
+                        "lat": csv_data['lat'],
+                        "lng": csv_data['lng'],
+                    }
                 for field in driver_unnecessary_fields:
                     driver.pop(field, None)
 
@@ -142,12 +189,25 @@ async def get_drivers(
                 if not all_working_days_hours.get('in_time'):
                     driver['missing_working_days_hours'] = True
 
-                driver['start_time'] = start_time
+                if previous_day_driver_schedules:
+                    current_driver_schedule = next((ds for ds in previous_day_driver_schedules if ds.get('driverId') == driver.get('_id')), {}) or {}
+                    start_time_minute = current_driver_schedule.get('start_time', None)
+                    if start_time_minute:
+                        driver['start_time'] = show_time_from_minute_of_day(max(start_time_minute, get_minute_from_time(start_time)))
+                    else:
+                        driver['start_time'] = start_time
+                    driver['depot_location'] = current_driver_schedule.get('start_loc', driver.get('depot_location'))
+                    driver['depot_customer_id'] = current_driver_schedule.get('start_customer_id', driver.get('depot_customer_id'))
+                else:
+                    driver['start_time'] = start_time
                 driver['end_time'] = end_time
 
                 driver['is_company_driver'] = 'COMPANY DRIVER' in driver.get('profile_type', [])
                 driver['is_owner_operator'] = 'OWNER OPERATOR' in driver.get('profile_type', [])
-
+            
+                
+                
+                
             # filter the drivers without depot location or depot customer id
             drivers = [
                 driver for driver in drivers 

@@ -46,7 +46,8 @@ LOAD_PROJECTION = {
     "isReadyForPickup": 1,
     "isHot": 1,
     "overWeight": 1,
-    "caller": 1
+    "caller": 1,
+    "callerPONo": 1
 }
 
 DISPATCHED_STATUSES = [
@@ -160,4 +161,5 @@ LOAD_PROJECTION_FOR_OPTIMIZER = {
     "loadStatus": 1,
     "caller": 1,
     "chassisType": 1,
+    "callerPONo": 1,
 }
