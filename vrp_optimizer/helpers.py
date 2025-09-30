@@ -104,7 +104,7 @@ def get_yard_data(yard_locations):
             'early_arrival_waiting': 0,
             'locations': [],
             '_id': 'Yard',
-            'allowed_operations': yard_locations.get('allowed_operations', YARD_ALLOWED_OPERATIONS)
+            'allowed_operations': yard_locations.get('allowed_operations', [])
         }
 
 

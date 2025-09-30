@@ -193,10 +193,10 @@ async def get_default_yard_location(carrier_id: str, get_from_db: bool = False, 
                         })
                         
                     return default_yard_locations
+            return []
     except Exception as e:
         logger.error(f"Error getting default yard location: {str(e)}")
         raise Exception(f"Failed to get default yard location: {str(e)}")
-    
 
 
 async def get_shift_times(carrier: str) -> Dict[str, Any]:

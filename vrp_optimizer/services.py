@@ -300,7 +300,6 @@ def handle_assigned_moves(user_payload, drivers, default_yard_locations, additio
                     driver_details['start_location'] = last_event.get('customerId', None)
                     driver_details['depot_hash_key'] = location.get('hash_key')
                     driver_details['is_working'] = True
-                    driver_details['is_assigned_manually'] = True
                     
                     # Add last location as a depot
                     depot_locations[driver_details['start_location']] = location

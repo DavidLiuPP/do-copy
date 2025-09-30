@@ -62,6 +62,9 @@ def should_avoid_assignment(from_node, node, vehicle, base_distance):
     # Skip if coming from depot
     if from_node.get('isDepot', False):
         return False
+
+    if vehicle.get('is_port_operator', False):
+        return False
         
     # Check if current node is an import port pickup
     current_move_events = node.get('move', [])

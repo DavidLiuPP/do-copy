@@ -140,18 +140,6 @@ CONSTRAINT_RULES: List[Dict[str, Any]] = [
         'vehicle_field': 'preferred_chassis_types',
     },
     {
-        'constraint_name': 'highway',
-        'node_field': 'is_highway',
-        'operator': 'REQUIRES_IF_TRUE',
-        'vehicle_field': 'highway',
-    },
-    {
-        'constraint_name': 'local',
-        'node_field': 'is_local',
-        'operator': 'REQUIRES_IF_TRUE',
-        'vehicle_field': 'local',
-    },
-    {
         'constraint_name': 'domestic',
         'node_field': 'domestic',
         'operator': 'REQUIRES_IF_TRUE',
@@ -169,6 +157,12 @@ CONSTRAINT_RULES: List[Dict[str, Any]] = [
         'operator': 'IN',
         'vehicle_field': 'preferred_container_types',
     },
+    {
+        'constraint_name': 'route_type',
+        'node_field': 'route_type',
+        'operator': 'IN',
+        'vehicle_field': 'load_route_type',
+    }
 ]
 
 def operator_fn(operator: str, left_val, right_val) -> bool:

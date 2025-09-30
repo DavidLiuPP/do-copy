@@ -17,7 +17,8 @@ VALID_X_API_KEY_PATHS = [
     "/v1/get_driver_plan_stats",
     "/upload_waiting_time",
     "/v1/update_db",
-    "/store-yard-recommendations"
+    "/store-yard-recommendations",
+    "/generate_driver_assign_report"
 ]
 
 class AuthorizationMiddleware(BaseHTTPMiddleware):

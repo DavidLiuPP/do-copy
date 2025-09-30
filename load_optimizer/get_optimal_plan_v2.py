@@ -739,7 +739,8 @@ def get_unassigned_moves(optimal_plan, all_loads, invalid_moves, plan_date, time
                 'is_assigned_move': False,
                 'is_deleted': True,
                 'is_free_flow_move': move.get('is_free_flow_move', False),
-                'reason': move.get('reason', 'UNKNOWN_REASON')
+                'reason': move.get('reason', 'UNKNOWN_REASON'),
+                'terminal': move.get('terminal', '')
             }
             unassigned_loads.append(mapped_move)
 

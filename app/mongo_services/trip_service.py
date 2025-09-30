@@ -29,7 +29,7 @@ async def get_trips(criteria: Dict[str, Any], limit: int = 10) -> List[Dict[str,
         cursor = trips_collection.find(
             criteria,
             {}
-        ).limit(limit)
+        ).limit(limit).max_time_ms(120000)
 
         # Convert cursor to list
         trips = await cursor.to_list(length=limit)
@@ -61,7 +61,7 @@ async def get_orders(criteria: Dict[str, Any], limit: int = 10) -> List[Dict[str
         cursor = orders_collection.find(
             criteria,
             {}
-        ).limit(limit)
+        ).limit(limit).max_time_ms(120000)
 
         # Convert cursor to list
         orders = await cursor.to_list(length=limit)

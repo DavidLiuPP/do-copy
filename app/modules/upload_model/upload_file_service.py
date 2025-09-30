@@ -56,11 +56,11 @@ async def get_model_files(carrier: str, file_type: str, load_type: str, file_nam
             return sorted(records, key=lambda x: x['version'], reverse=True)
         
     except ConnectionError as e:
-        logger.error(f"Database connection error: {str(e)}", exc_info=True)
+        logger.error(f"Database connection error for carrier: {carrier}: {str(e)}", exc_info=True)
         raise ConnectionError(f"Failed to connect to database: {str(e)}")
     
     except Exception as e:
-        logger.error(f"Error retrieving event location data: {str(e)}", exc_info=True)
+        logger.error(f"Error retrieving event location data for carrier: {carrier}: {str(e)}", exc_info=True)
         raise
     
 async def store_file_in_db(object: Dict[str, Any]) -> None:
@@ -93,9 +93,11 @@ async def store_file_in_db(object: Dict[str, Any]) -> None:
             """, object["carrier"], object["file_name"], object["load_type"], object["file_type"], object["file_url"], object["version"])
 
     except ConnectionError as e:
-        logger.error(f"Database connection error: {str(e)}", exc_info=True)
+        carrier = object.get('carrier', 'unknown')
+        logger.error(f"Database connection error for carrier: {carrier}: {str(e)}", exc_info=True)
         raise ConnectionError(f"Failed to connect to database: {str(e)}")
     
     except Exception as e:
-        logger.error(f"Error storing file in database: {str(e)}", exc_info=True)
+        carrier = object.get('carrier', 'unknown')
+        logger.error(f"Error storing file in database for carrier: {carrier}: {str(e)}", exc_info=True)
         raise

@@ -76,7 +76,6 @@ async def generate_driver_plan(request: Request, background_tasks: BackgroundTas
     """
     try:
         user_payload = request.state.user
-        user_payload = {'carrier': '60196e05993170084efd0f4d', 'userId': '60196e05993170084efd0f4d'}
         carrier = user_payload.get('carrier')
         if not carrier:
             return JSONResponse(
@@ -113,7 +112,8 @@ async def generate_driver_plan(request: Request, background_tasks: BackgroundTas
             driver_tags=driver_tags,
             route_type=route_type,
             previous_day_driver_schedules=previous_day_driver_schedules,
-            dispatch_plan_params=dispatch_plan_params
+            dispatch_plan_params=dispatch_plan_params,  
+            is_pending_loads_allowed=True
         )
 
         response = { "result": result, "status": "success" }
@@ -147,15 +147,14 @@ async def manage_in_day_plan_controller(request: Request):
         driver_schedules = body.get('driverInfo', [])
         behind_schedule_moves = body.get('behind_schedule_moves', [])
         branch = body.get('branch', None)
-        shift = body.get('shift', None)
+        plan_date = body.get('plan_date', None)
         
         result = await manage_in_day_plan(
             user_payload=user_payload, 
             driver_schedules=driver_schedules,
             behind_schedule_moves=behind_schedule_moves,
             branch=branch,
-            shift=shift
-
+            plan_date=plan_date
         )
 
         response = { "result": result, "status": "success" }
@@ -314,10 +313,12 @@ async def get_eta(request: Request):
         
         payload = await request.json()
         eta_payload = payload.get('eta_payload')
+        plan_date = payload.get('plan_date', None)
         
         result = await get_eta_details(
             user_payload=user_payload,
-            eta_payload=eta_payload
+            eta_payload=eta_payload,
+            plan_date=plan_date
         )
 
         response = { "result": result, "status": "success" }

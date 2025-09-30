@@ -40,7 +40,7 @@ async def get_loads(criteria: Dict[str, Any], projection: Dict[str, Any] = LOAD_
         cursor = loads_collection.find(
             criteria,
             projection
-        ).limit(limit)
+        ).limit(limit).max_time_ms(120000)
 
         # Convert cursor to list
         loads = await cursor.to_list(length=limit)
@@ -76,7 +76,7 @@ async def get_loadcharges(criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "totalAmount": 1,
                 "totalAmountWithTax": 1
             }
-        )
+        ).max_time_ms(120000)
 
         # Convert cursor to list
         loadcharges = await cursor.to_list()
@@ -91,25 +91,59 @@ async def get_active_loads(
     carrier: str,
     load_criteria: Dict[str, Any],
     limit: int = 10,
-    options: dict = {},
+    plan_from_time: datetime = None,
 ) -> List[Dict[str, Any]]:
     """
     Retrieve active loads for a specific carrier from MongoDB.
     """
     try:
 
-        load_statuses = DISPATCHED_STATUSES
-        if options.get('ignored_pending_loads', False):
-            load_statuses = [status for status in DISPATCHED_STATUSES if status != 'PENDING']   
-
         # Build query filter
+        load_statuses = [status for status in DISPATCHED_STATUSES if status != 'PENDING']
         query_filter = {
             "carrier": ObjectId(carrier),
-            "status": { "$in": load_statuses },
             "type_of_load": { "$in": ["IMPORT", "EXPORT"] },
             "createdAt": { "$gte": datetime.now() - timedelta(days=90) },
             "isDeleted": False
         }
+        
+        # Add status filtering with PENDING loads requiring appointments
+        if plan_from_time:
+            # If plan_from_time is provided, filter PENDING loads for that specific date
+            today_start = plan_from_time.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = plan_from_time + timedelta(days=1)
+            
+            query_filter["$or"] = [
+                # Non-pending loads
+                { "status": { "$in": load_statuses } },
+                # Pending loads must have appointments on the plan date
+                {
+                    "status": "PENDING",
+                    "$or": [
+                        {
+                            "pickupTimes.pickupFromTime": {
+                                "$gte": today_start,
+                                "$lt": today_end
+                            }
+                        },
+                        {
+                            "deliveryTimes.deliveryFromTime": {
+                                "$gte": today_start,
+                                "$lt": today_end
+                            }
+                        },
+                        {
+                            "returnFromTime": {
+                                "$gte": today_start,
+                                "$lt": today_end
+                            }
+                        }
+                    ]
+                }
+            ]
+        else:
+            # If no plan_from_time, just use regular status filtering
+            query_filter["status"] = { "$in": load_statuses }
 
         if load_criteria.get('plan_branch'):
             query_filter["terminal"] = {
@@ -117,13 +151,6 @@ async def get_active_loads(
             }
         if load_criteria.get('route_type', []):
             query_filter["routeType"] = { "$in": load_criteria.get('route_type') }
-
-        if options.get('scheduled_moves_only', False):
-            query_filter['$or'] = [
-                { "pickupTimes.pickupFromTime": { "$exists": True, "$ne": None } },
-                { "deliveryTimes.deliveryFromTime": { "$exists": True, "$ne": None } },
-                { "returnFromTime": { "$exists": True, "$ne": None } },
-            ]
 
         # Execute query and get loads
         loads = await get_loads(query_filter, LOAD_PROJECTION, limit)
@@ -211,6 +238,7 @@ async def get_available_loads(
     carrier: str,
     load_criteria: Dict[str, Any],
     limit: int = 10,
+    options: dict = {},
 ) -> List[Dict[str, Any]]:
     """
     Get available loads for a given carrier.
@@ -226,7 +254,7 @@ async def get_available_loads(
         # filter loads that are available or ready to be returned
         filtered_loads = []
         for load in loads:
-            if load['status'] == 'PENDING':
+            if load['status'] == 'PENDING' and not options.get('is_pending_loads_allowed', False):
                 continue
             if load['status'] == 'DROPCONTAINER_DEPARTED' and load.get('driverOrderId', {}).get('prevType') == 'DELIVERLOAD':
                 if load['type_of_load'] == 'IMPORT' and load['loadStatus'] == DROPPED_LOADED:
@@ -259,12 +287,12 @@ async def get_available_loads(
 
                 load['driverOrder'] = driver_order
             except Exception as e:
-                logger.error(f"Error getting available load: {str(e)}")
+                logger.error(f"Error getting available load for carrier: {carrier}: {str(e)}")
 
         return filtered_loads
     
     except Exception as e:
-        logger.error(f"Error getting available loads: {str(e)}")
+        logger.error(f"Error getting available loads for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to get available loads: {str(e)}")
 
 
@@ -501,7 +529,7 @@ async def get_assigned_moves(
                                 valid_move = True
                                 break
                         except Exception as e:
-                            logger.error(f"Error getting assigned move Error: {str(e)}")
+                            logger.error(f"Error getting assigned move for carrier: {carrier}: {str(e)}")
                             continue
 
                     if valid_move:
@@ -520,12 +548,12 @@ async def get_assigned_moves(
                 all_loads.append(load)
 
             except Exception as e:
-                logger.error(f"Error getting assigned moves Error: {str(e)}")
+                logger.error(f"Error getting assigned moves for carrier: {carrier}: {str(e)}")
                 continue
 
         return all_loads
     except Exception as e:
-        logger.error(f"Error getting assigned moves: {str(e)}")
+        logger.error(f"Error getting assigned moves for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to get assigned moves: {str(e)}")
     
 async def get_completed_moves(
@@ -640,5 +668,5 @@ async def get_completed_moves(
         return all_loads
 
     except Exception as e:
-        logger.error(f"Error getting assigned moves: {str(e)}")
+        logger.error(f"Error getting assigned moves for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to get assigned moves: {str(e)}")

@@ -151,7 +151,8 @@ def process_event(event: Dict[str, Any], timeZone: str):
 
 async def get_eta_details(
     user_payload: Dict[str, Any],
-    eta_payload: List[Dict[str, Any]]
+    eta_payload: List[Dict[str, Any]],
+    plan_date: str
 ) -> Dict[str, Any]:
     try:
         carrier = user_payload.get('carrier')
@@ -196,6 +197,7 @@ async def get_eta_details(
 
         # get loads from mongodb
         final_loads = []
+        load_details = []
         if len(loads) > 0:
             reference_numbers = [load['reference_number'] for load in loads]
             load_details = await get_loads_with_reference_numbers(carrier, load_criteria={
@@ -220,7 +222,10 @@ async def get_eta_details(
                         all_locations.extend(list(set(event['customerId'] for event in selected_move if event.get('customerId'))))
 
         tz = pytz.timezone(timeZone)
-        converted_plan_date = tz.localize(datetime.now()).replace(hour=0, minute=0, second=0)
+        if not plan_date:
+            converted_plan_date = tz.localize(datetime.now()).replace(hour=0, minute=0, second=0)
+        else:
+            converted_plan_date = tz.localize(datetime.strptime(plan_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
         all_locations = list(set(all_locations))
         location_office_hours = await get_office_hours(carrier, all_locations, timeZone)
         

@@ -557,7 +557,8 @@ async def send_email(excel_data: bytes, excel_filename: str, plan_date: str, car
             '6478bad770a34316adb76c24': 'AlphaCargo',
             '623a1a0ae85bec6eacd5096d': 'DileTrucking',
             '5a39472b4a819b31e9496084': 'Loyalty',
-            '6500ac3f5b4e7715cea4a2fe': 'Seaport'
+            '6500ac3f5b4e7715cea4a2fe': 'Seaport',
+            '660c6c4a8cafa7e8d8a2ad08': 'MayorWestCoast'
         }
         
         # Use the carrier map to get the readable name, or use the original ID if not found

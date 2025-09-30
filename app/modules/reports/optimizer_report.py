@@ -1,6 +1,7 @@
 import logging
 import json
 import pytz
+import pandas as pd
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from bson.objectid import ObjectId
@@ -8,6 +9,8 @@ from bson.objectid import ObjectId
 from app.services.redis_service import get_default_yard_location
 from app.services.common_service import get_time_zone, get_carrier_preferences
 from app.utils.distance_calc import calculate_distance_between_locations
+from app.postgres_connection import PostgresConnection
+from app.synced_db_connection import get_synced_db_client
 from app.postgres_services.driver_service import get_drivers
 from app.modules.optimizer.hos_service import get_hos_data_for_drivers
 from app.modules.optimizer.driver_plan import get_shift_time
@@ -16,10 +19,11 @@ from app.modules.scheduler.utility import map_loads_for_scheduler
 from app.postgres_services.configurations_service import get_equipment_validations, get_container_sizes, get_container_types
 from vrp_optimizer.helpers import generated_criteria, get_chassis_activity_between_moves, get_all_driver_default_locations
 from vrp_optimizer.assumptions import CHASSIS_ACTIVITIES
-
 from app.modules.optimizer.map_loads_optimizer_service import map_actionable_moves
 from load_optimizer.get_optimal_plan_v3 import get_optimal_plan_v3
 from app.mongo_services.mongo_service import get_customers
+from app.synced_db_connection import get_synced_db_client
+from app.postgres_services.store_driver_plan import PostgresConnection
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +107,8 @@ async def map_loads_for_reporting(
             ]
             if not actionable_moves:
                 continue
+
+            load['actual_driver_order'] = load.get('driverOrder', [])
 
             for move_index, actionable_move in enumerate(actionable_moves):
                 load_copy = load.copy()
@@ -1188,4 +1194,473 @@ async def compare_optimiser_plan(user_payload: Dict[str, Any], plan_date: str) -
         return {
             "status": "error",
             "message": str(e)
+        }
+
+
+
+# route to get plan recommendations and actually what happened
+async def get_plan_recommendations_and_actual_plan(carrier: str):
+    """
+    Get the plan recommendations and actual plan
+    """
+    try:
+        fetch_days = 10
+        timezone = await get_time_zone(carrier)
+        tz = pytz.timezone(timezone)
+        
+        plan_date = datetime.now(tz).replace(hour=0, minute=0, second=0)
+
+        data_for_analysis = []
+        
+        # get all plans from the database
+        while fetch_days > 0:
+            fetch_days -= 1
+            plan_date = plan_date - timedelta(days=1)
+
+            optimizer_loads = []
+            postgres = PostgresConnection()
+            pool = await postgres.get_pool()
+            async with pool.acquire() as conn:
+                SQL = f"""
+                    SELECT id, version FROM optimizer_plans WHERE carrier = $1 AND plan_date = $2 ORDER BY version DESC
+                """
+                rows = await conn.fetch(SQL, carrier, plan_date)
+                optimizer_plan = [dict(row) for row in rows]
+                plan_id = optimizer_plan[0].get('id') if optimizer_plan else None
+
+                if not plan_id:
+                    continue
+
+                LOAD_SQL = f"""
+                    SELECT * FROM optimizer_loads WHERE plan_id = $1
+                """
+                rows = await conn.fetch(LOAD_SQL, plan_id)
+                optimizer_loads = [dict(row) for row in rows]
+
+                # if there are more than one rows with same reference_number, keep the row with is_deleted = true
+                optimizer_loads = [
+                    load for load in optimizer_loads 
+                    if load.get('reference_number') not in [
+                        load.get('reference_number') 
+                        for load in optimizer_loads 
+                        if load.get('is_deleted')
+                    ]
+                ]
+
+            actual_plan = []
+            synced_db = get_synced_db_client()
+            pool = await synced_db.get_pool()
+            async with pool.acquire() as conn:
+                move_ids = [load.get('move_id') for load in optimizer_loads]
+                SQL = f"""
+                    SELECT * FROM moves WHERE carrier = $1 AND _id = ANY($2)
+                """
+                rows = await conn.fetch(SQL, carrier, move_ids)
+                actual_plan = [dict(row) for row in rows]
+            
+            data_for_analysis.append({
+                "plan_date": plan_date.strftime('%Y-%m-%d'),
+                "optimizer_plan": optimizer_loads,
+                "actual_plan": actual_plan
+            })
+
+        # create an excel file, a separate file for each record in data_for_analysis
+        carrier_name_mapper = {
+            '63039f613d347315e2a02a2d': 'TriPoint',
+            '653a6813f7eb901615236816': 'QualityContainer',
+            '641a10875b159a160742327e': 'RoadEx',
+            '6478bad770a34316adb76c24': 'AlphaCargo',
+            '623a1a0ae85bec6eacd5096d': 'DileTrucking',
+            '5a39472b4a819b31e9496084': 'Loyalty',
+            '6500ac3f5b4e7715cea4a2fe': 'Seaport'
+        }
+        carrier_name = carrier_name_mapper.get(carrier, carrier)
+        for record in data_for_analysis:
+            excel_file = f"{carrier_name}_{record.get('plan_date')}.xlsx"
+            with pd.ExcelWriter(excel_file, engine='xlsxwriter') as writer:
+                optimizer_plan = record.get('optimizer_plan')
+                actual_plan = record.get('actual_plan')
+                
+                # create 2 sheets, in one sheet add optimizer plan and in other sheet add actual plan
+                optimizer_plan_df = pd.DataFrame(optimizer_plan)
+                actual_plan_df = pd.DataFrame(actual_plan)
+                
+                # Convert timezone-aware datetimes to timezone-naive
+                for df in [optimizer_plan_df, actual_plan_df]:
+                    for col in df.select_dtypes(include=['datetime64[ns, UTC]']).columns:
+                        df[col] = df[col].dt.tz_localize(None)
+                    
+                    # Convert boolean values to string 'True'/'False'
+                    for col in df.select_dtypes(include=['bool']).columns:
+                        df[col] = df[col].map({True: 'True', False: 'False'})
+                
+                optimizer_plan_df.to_excel(writer, sheet_name='Optimizer Plan', index=False)
+                actual_plan_df.to_excel(writer, sheet_name='Actual Plan', index=False)
+            
+                # save the excel file to a folder in current directory
+                with open(excel_file, 'rb') as file:
+                    excel_data = file.read()
+                with open(f"{carrier_name}_{record.get('plan_date')}.xlsx", 'wb') as file:
+                    file.write(excel_data)
+        
+        return {
+            "status": "success",
+            "message": "Plan recommendations and actual plan fetched successfully",
+        }
+
+
+    except Exception as e:
+        logger.error(e)
+        
+async def get_assigned_drivers_moves(user_payload: Dict[str, Any], plan_from_time: datetime, plan_to_time: datetime):
+    try:
+        carrier = user_payload.get('carrier')
+        plan_branch = user_payload.get('plan_branch', "")
+
+        # Get PostgreSQL connection pool
+        synced_db = get_synced_db_client()
+        pool = await synced_db.get_pool()
+        
+        # Build the PostgreSQL query with move events information
+        query = """
+        SELECT 
+            e.moveid,
+            MIN(DISTINCT e.driver) AS driver,
+            MIN(DISTINCT e.carrier) AS carrier,
+            MIN(DISTINCT e.reference_number) AS reference_number,
+            MIN(DISTINCT e.loadid) AS loadid,
+            MIN(e.order_index) AS first_order_index,
+            STRING_AGG(e.type, '_' ORDER BY e.order_index, e.type) AS move_events
+        FROM events e
+        JOIN loads l 
+            ON e.loadid = l._id
+        WHERE e.moveid IS NOT NULL
+          AND e.carrier = $1
+          AND e.arrived BETWEEN $2 AND $3
+          AND l.type_of_load IN ('IMPORT','EXPORT')
+          AND l.isdeleted = false
+          AND e.driver IS NOT NULL
+        """
+        
+        # Add terminal filter if plan_branch is provided
+        if plan_branch:
+            query += " AND l.terminal = $4"
+            params = [carrier, plan_from_time, plan_to_time, plan_branch]
+        else:
+            params = [carrier, plan_from_time, plan_to_time]
+        
+        query += " GROUP BY e.moveid ORDER BY MIN(e.order_index) ASC, e.moveid DESC"
+        
+        
+        async with pool.acquire() as conn:
+            result = await conn.fetch(query, *params)
+            
+        # Convert result to list of dictionaries and handle duplicates by keeping earliest move per load
+        all_loads = []
+        assigned_move_ids = []
+        moves_by_load = {}  # Track earliest move per load
+        
+        for row in result:
+            load_id = row['loadid']
+            order_index = row['first_order_index']
+            
+            # Keep only the earliest move per load (lowest order_index)
+            if load_id not in moves_by_load or order_index < moves_by_load[load_id]['first_order_index']:
+                moves_by_load[load_id] = {
+                    'move_id': row['moveid'],
+                    'driver': row['driver'],
+                    'carrier': row['carrier'],
+                    'reference_number': row['reference_number'],
+                    'load_id': load_id,
+                    'move_events': row['move_events'],
+                    'first_order_index': order_index
+                }
+        
+        # Add unique moves to final list
+        for move in moves_by_load.values():
+            all_loads.append(move)
+            assigned_move_ids.append(move['move_id'])
+        
+        return all_loads, assigned_move_ids
+        
+    except Exception as e:
+        logger.error(f"Error get assigned drivers moves service for carrier: {carrier}: {str(e)}")
+        return [], []
+    
+async def get_optimal_moves(user_payload: Dict[str, Any], plan_date: datetime, assigned_move_ids: list):
+    try:
+        carrier = user_payload.get('carrier')
+        shift = user_payload.get('shift')
+        plan_branch = user_payload.get('plan_branch', "")
+        
+        postgres = PostgresConnection()
+        pool = await postgres.get_pool()
+        
+        # First query: Get the latest version plan_id based on criteria
+        latest_plan_query = """
+            SELECT id, version
+            FROM optimizer_plans
+            WHERE carrier = $1 
+              AND plan_date = $2
+        """
+        
+        params = [carrier, plan_date]
+        
+        if shift:
+            latest_plan_query += f" AND shift = '{shift}'"
+        if plan_branch:
+            latest_plan_query += " AND $3 = ANY(branch)"
+            params.append(plan_branch)
+        
+        latest_plan_query += " ORDER BY version DESC LIMIT 1"
+        
+        async with pool.acquire() as conn:
+            latest_plan_result = await conn.fetch(latest_plan_query, *params)
+            
+        if not latest_plan_result:
+            logger.warning(f"No optimal plan found for carrier: {carrier}, plan_date: {plan_date}, shift: {shift}, branch: {plan_branch}")
+            raise Exception(f"No optimal plan found for carrier: {carrier}, plan_date: {plan_date}, shift: {shift}, branch: {plan_branch}")
+                    
+        latest_plan_id = str(latest_plan_result[0]['id'])
+        
+        # Second query: Get optimal moves for the latest plan_id
+        optimal_moves_query = """
+            SELECT *
+            FROM optimizer_loads
+            WHERE plan_id = $1 AND carrier = $2 
+              AND is_deleted = false
+        """
+        
+        async with pool.acquire() as conn:
+            optimal_moves = await conn.fetch(optimal_moves_query, latest_plan_id, carrier)
+            
+        
+        plan_from_time = plan_date + timedelta(minutes=0)
+        plan_to_time = plan_date + timedelta(minutes=1440)
+            
+        # Get in_day_plan_moves with latest version approach
+        in_day_query = """
+                SELECT *
+                FROM suggestions_tracking
+                WHERE carrier = $1 
+                  AND created_at::date BETWEEN $2 AND $3
+                  AND move_id = ANY($4)
+                """
+        in_day_params = [carrier, plan_from_time, plan_to_time, assigned_move_ids]
+                    
+        async with pool.acquire() as conn:
+            in_day_plan_moves = await conn.fetch(in_day_query, *in_day_params)
+
+        # Build a dict for in_day_plan_moves keyed by move_id for fast lookup and deduplication
+        in_day_move_ids = set()
+        combined_moves = []
+
+        # Add in_day_plan_moves directly (already unique due to assigned_move_ids filter)
+        for move in in_day_plan_moves:
+            in_day_move_ids.add(move.get('move_id'))
+            combined_moves.append({
+                'move_id': move.get('move_id'),
+                'driver': move.get('suggested_driver'),
+                'carrier': move.get('carrier'),
+                'load_id': move.get('load_id'),
+                'reference_number': move.get('reference_number', ''),
+                'move_events': move.get('move_events', ''),
+                'source': 'in_day_plan'
+            })
+
+        # Handle duplicates in optimal moves - keep earliest move per load (lowest d_index)
+        optimal_moves_by_load = {}
+        for move in optimal_moves:
+            load_id = move.get('load_id')
+            if load_id:
+                # Extract first d_index from move JSON array
+                first_d_index = 0
+                move_json = move.get('move')
+                if move_json and isinstance(move_json, list):
+                    sorted_events = sorted(move_json, key=lambda x: (x.get('d_index', 0), x.get('type', '')))
+                    if sorted_events:
+                        first_d_index = sorted_events[0].get('d_index', 0)
+                
+                # Keep only the earliest move per load (lowest d_index)
+                if load_id not in optimal_moves_by_load or first_d_index < optimal_moves_by_load[load_id]['first_d_index']:
+                    optimal_moves_by_load[load_id] = {
+                        'move_id': move.get('move_id'),
+                        'driver': move.get('driver'),
+                        'carrier': move.get('carrier'),
+                        'load_id': load_id,
+                        'reference_number': move.get('reference_number', ''),
+                        'move_events': move.get('move_events', ''),
+                        'first_d_index': first_d_index
+                    }
+        
+        # Add unique optimal moves
+        for move in optimal_moves_by_load.values():
+            if move.get('move_id') not in in_day_move_ids:  # Skip if already in in_day_plan
+                combined_moves.append({
+                    'move_id': move.get('move_id'),
+                    'driver': move.get('driver'),
+                    'carrier': move.get('carrier'),
+                    'load_id': move.get('load_id'),
+                    'reference_number': move.get('reference_number', ''),
+                    'move_events': move.get('move_events', ''),
+                    'source': 'optimal'
+                })
+
+        return combined_moves
+        
+    except Exception as e:
+        logger.error(f"Error get optimal driver plan service for carrier: {carrier}: {str(e)}")
+        return []
+
+
+async def generate_driver_assign_report(user_payload: Dict[str, Any], plan_date: str):
+    try:
+        carrier = user_payload.get('carrier')
+        plan_branch = user_payload.get('plan_branch', "")
+        shift = user_payload.get('shift')
+        
+        # Get timezone and calculate time range
+        timeZone = await get_time_zone(carrier)
+        tz = pytz.timezone(timeZone)
+        converted_plan_date = tz.localize(datetime.strptime(plan_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
+        shift_time = await get_shift_time(carrier, converted_plan_date, shift, [plan_branch], timeZone)
+        
+        # Convert to UTC for database queries
+        plan_from_time_utc = (converted_plan_date + timedelta(minutes=shift_time[0])).astimezone(pytz.UTC).replace(tzinfo=None)
+        plan_to_time_utc = (converted_plan_date + timedelta(minutes=shift_time[1])).astimezone(pytz.UTC).replace(tzinfo=None)
+        
+        # Get data in parallel
+        assigned_drivers_moves, assigned_move_ids = await get_assigned_drivers_moves(user_payload, plan_from_time_utc, plan_to_time_utc)
+        optimal_moves = await get_optimal_moves(user_payload, converted_plan_date, assigned_move_ids)
+        
+        # Generate report
+        report = await generate_csv_like_report(assigned_drivers_moves, optimal_moves, carrier)
+        
+        return {
+            "status": "success",
+            "message": "Driver assign report generated successfully",
+            "data": report
+        }
+
+    except Exception as e:
+        logger.error(f"Error generate driver assign report service for carrier: {carrier}: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+async def get_driver_names(carrier: str, driver_ids: list):
+    """
+    Get driver names efficiently using synced database with indexed query
+    """
+    try:
+        if not driver_ids:
+            return {}
+            
+        # Use synced database connection (same as get_assigned_drivers_moves)
+        synced_db = get_synced_db_client()
+        pool = await synced_db.get_pool()
+        
+        # Build efficient query with carrier index
+        query = """
+            SELECT _id, name, last_name
+            FROM users
+            WHERE _id = ANY($1) AND carrier_id = $2
+        """
+        
+        async with pool.acquire() as conn:
+            result = await conn.fetch(query, driver_ids, carrier)
+        
+        logger.info(f"Found {len(result)} drivers in database")
+        
+        driver_names = {}
+        for row in result:
+            driver_id = str(row['_id'])
+            name = row.get('name', '') or ''
+            last_name = row.get('last_name', '') or ''
+            full_name = f"{name} {last_name}".strip()
+            driver_names[driver_id] = full_name if full_name else f"Driver {driver_id}"
+            
+        return driver_names
+        
+    except Exception as e:
+        logger.error(f"Error getting driver names for carrier: {carrier}: {str(e)}")
+        return {}
+
+async def generate_csv_like_report(assigned_drivers_moves, optimal_moves, carrier):
+    """
+    Generate clean CSV-like report with driver names and summary
+    """
+    try:
+        # Get all unique driver IDs
+        all_driver_ids = set()
+        for move in assigned_drivers_moves:
+            if move.get('driver'):
+                all_driver_ids.add(move.get('driver'))
+        for move in optimal_moves:
+            if move.get('driver'):
+                all_driver_ids.add(move.get('driver'))
+        
+        # Get driver names efficiently
+        driver_names = await get_driver_names(carrier, list(all_driver_ids))
+        
+        # Create lookup for optimal moves using move_id for comparison
+        optimal_lookup = {}
+        for move in optimal_moves:
+            move_id = move.get('move_id')
+            if move_id:
+                optimal_lookup[move_id] = move
+        
+        # Generate CSV-like records - compare by move_id
+        csv_records = []
+        for assigned_move in assigned_drivers_moves:
+            move_id = assigned_move.get('move_id')
+            optimal_move = optimal_lookup.get(move_id)
+            
+            record = {
+                'load_id': assigned_move.get('load_id'),
+                'move_id': move_id,
+                'reference_number': assigned_move.get('reference_number'),
+                'move_events': assigned_move.get('move_events'),
+                'suggested_driver_id': optimal_move.get('driver') if optimal_move else 'N/A',
+                'suggested_driver_name': driver_names.get(optimal_move.get('driver'), f"Driver {optimal_move.get('driver', '')}") if optimal_move else 'N/A',
+                'used_driver_id': assigned_move.get('driver'),
+                'used_driver_name': driver_names.get(assigned_move.get('driver'), f"Driver {assigned_move.get('driver', '')}"),
+                'is_included_in_plan': move_id in optimal_lookup,
+                'driver_match': assigned_move.get('driver') == optimal_move.get('driver') if optimal_move else False
+            }
+            csv_records.append(record)
+        
+        # Calculate summary efficiently
+        total_assigned_moves = len(assigned_drivers_moves)
+        moves_included_in_plan = sum(1 for r in csv_records if r['is_included_in_plan'])
+        moves_not_included_in_plan = total_assigned_moves - moves_included_in_plan
+        driver_matches = sum(1 for r in csv_records if r['driver_match'])
+        driver_recommendations_ignored = sum(1 for r in csv_records if r['is_included_in_plan'] and not r['driver_match'])
+        
+        summary = {
+            'total_actual_moves': total_assigned_moves,
+            'moves_included_in_plan': moves_included_in_plan,
+            'moves_not_included_in_plan': moves_not_included_in_plan,
+            'driver_recommendations_followed': driver_matches,
+            'driver_recommendations_ignored': driver_recommendations_ignored
+        }
+        
+        return {
+            'summary': summary,
+            'records': csv_records
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating CSV-like report: {str(e)}")
+        return {
+            'summary': {
+                'total_actual_moves': 0,
+                'moves_included_in_plan': 0,
+                'moves_not_included_in_plan': 0,
+                'driver_recommendations_followed': 0,
+                'driver_recommendations_ignored': 0,
+                'compliance_rate': 0
+            },
+            'records': []
         }

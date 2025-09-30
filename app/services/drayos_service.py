@@ -27,11 +27,11 @@ async def drayos_api_handler(carrier: str, request_type: str, endpoint: str, pay
         if response_data.get('statusCode') == 200:
             return response_data.get('data')
         else:
-            logger.error(f"Drayos API returned non-200 status code: {response_data.get('statusCode')}")
+            logger.error(f"Drayos API returned non-200 status code: {response_data.get('statusCode')} for carrier: {carrier}")
             return None
             
     except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to call Drayos API endpoint {endpoint}: {str(e)}")
+        logger.error(f"Failed to call Drayos API endpoint {endpoint} for carrier: {carrier}: {str(e)}")
         return None
 
 async def get_recommended_returns(carrier: str, payload_data: Any) -> Dict[str, Any]:
@@ -39,4 +39,5 @@ async def get_recommended_returns(carrier: str, payload_data: Any) -> Dict[str, 
         response = await get_recommendation_bulk(carrier, payload_data)
         return response.get('returnLocations', {})
     except Exception as e:
+        logger.error(f"Error getting recommendation for carrier: {carrier}: {str(e)}")
         raise Exception(f"Error getting recommendation: {str(e)}")

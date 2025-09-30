@@ -19,7 +19,7 @@ async def get_recommendation_bulk(carrier: str, payload: Any) -> Any:
         
     except requests.exceptions.RequestException as e:
         # Handle network errors, timeouts, etc
-        raise Exception(f"Failed to get recommendation from Trackos API: {str(e)}")
+        raise Exception(f"Failed to get recommendation from Trackos API for carrier: {carrier}: {str(e)}")
     except ValueError as e:
         # Handle JSON decode errors
-        raise Exception(f"Failed to parse Trackos API response: {str(e)}")
+        raise Exception(f"Failed to parse Trackos API response for carrier: {carrier}: {str(e)}")

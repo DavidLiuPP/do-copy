@@ -60,6 +60,7 @@ async def retrieve_loads_for_planning(
     shift_window: list = [0, 1440],
     is_in_day_plan: bool = False,
     behind_schedule_moves: list = [],
+    is_pending_loads_allowed: bool = False
 ):
     try:
         carrier = user_payload.get('carrier')
@@ -114,13 +115,14 @@ async def retrieve_loads_for_planning(
         assigned_reference_numbers = list(set(load.get('reference_number') for load in assigned_moves))
         reference_numbers = [ref for ref in reference_numbers if ref not in assigned_reference_numbers]
         
-        available_loads = await get_available_loads(carrier, load_criteria = {**load_criteria, 'reference_numbers': reference_numbers}, limit=2000)
+        available_loads = await get_available_loads(carrier, load_criteria = {**load_criteria, 'reference_numbers': reference_numbers}, limit=2000, options={'is_pending_loads_allowed': is_pending_loads_allowed})
         loads = [*assigned_moves, *available_loads]
 
         return loads, scheduled_plans
 
     except Exception as e:
-        logger.error(e)
+        carrier = user_payload.get('carrier')
+        logger.error(f"Failed to retrieve loads for planning for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to retrieve loads for planning: {str(e)}")
 
 
@@ -141,7 +143,8 @@ async def get_optmized_driver_plan(
     previous_day_driver_schedules: List[Dict[str, Any]] = [],
     driver_tags: list = [],
     route_type: list = [],
-    dispatch_plan_params: Dict[str, Any] = {}
+    dispatch_plan_params: Dict[str, Any] = {},
+    is_pending_loads_allowed: bool = False
 ) -> Dict[str, Any]:
     is_manage_plan_status = True if not is_in_day_plan and save_plan else False
     try:
@@ -207,6 +210,7 @@ async def get_optmized_driver_plan(
             shift_window=planning_minutes,
             is_in_day_plan=is_in_day_plan,
             behind_schedule_moves=behind_schedule_moves,
+            is_pending_loads_allowed=is_pending_loads_allowed
         )
         end_loads_time = time.time()
         print(f"Time taken to get loads: {end_loads_time - start_loads_time} seconds")
@@ -220,7 +224,8 @@ async def get_optmized_driver_plan(
         try:
             mapped_loads = await add_recommended_returns(user_payload, plan_date, mapped_loads)
         except Exception as e:
-            logger.error(f"Error adding recommended returns: {str(e)}")
+            carrier = user_payload.get('carrier')
+            logger.error(f"Error adding recommended returns for carrier: {carrier}: {str(e)}")
         end_add_recommended_returns_time = time.time()
         print(f"Time taken to add recommended returns: {end_add_recommended_returns_time - start_add_recommended_returns_time} seconds")
 
@@ -263,7 +268,8 @@ async def get_optmized_driver_plan(
             is_in_day_plan=is_in_day_plan,
             driver_schedules=driver_schedules,
             invalid_moves=invalid_moves,
-            dispatch_plan_params=dispatch_plan_params
+            dispatch_plan_params=dispatch_plan_params,
+            add_to_existing_plan=add_to_existing_plan
         )
         optimal_plan = optimizer_output['optimal_plan']
         invalid_moves = optimizer_output['invalid_moves']
@@ -306,7 +312,7 @@ async def get_optmized_driver_plan(
                     optimizer_input['plan_id'] = str(plan_id)
                     await upload_plan_json_to_s3(optimizer_input, carrier, str(plan_id))
                 except Exception as upload_err:
-                    logger.error(f"Failed to upload plan JSON to S3: {str(upload_err)}")
+                    logger.error(f"Failed to upload plan JSON to S3 for carrier: {carrier}: {str(upload_err)}")
 
                 end_save_plan_details_time = time.time()
                 print(f"Time taken to save plan details: {end_save_plan_details_time - start_save_plan_details_time} seconds")
@@ -314,7 +320,7 @@ async def get_optmized_driver_plan(
                 if is_manage_plan_status:
                     raise Exception("Plan not saved")
         except Exception as e:
-            logger.error("Failed to save plan details", e)
+            logger.error(f"Failed to save plan details for carrier: {carrier}: {str(e)}")
             raise Exception(f"Failed to save plan details: {str(e)}")
 
         return {
@@ -326,7 +332,7 @@ async def get_optmized_driver_plan(
         }
     
     except Exception as e:
-        logger.error(e)
+        logger.error(f"Error in get_optmized_driver_plan for carrier: {carrier}: {str(e)}")
         if is_manage_plan_status:
             await manage_generate_plan_status(carrier, plan_date, "ERROR", plan_branch)
         raise e
@@ -336,7 +342,7 @@ async def manage_in_day_plan(
     driver_schedules: List[Dict[str, Any]] = [],
     behind_schedule_moves: List[Dict[str, Any]] = [],
     branch: str | None = None,
-    shift: str | None = None
+    plan_date: str | None = None
 ):
     try:
         carrier = user_payload.get('carrier')
@@ -345,16 +351,19 @@ async def manage_in_day_plan(
         
         timeZone = await get_time_zone(carrier)
         tz = pytz.timezone(timeZone)
-        today = datetime.now(tz).strftime('%Y-%m-%d')
-        converted_plan_date = tz.localize(datetime.strptime(today, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
-        
+        if plan_date:
+            plan_date = tz.localize(datetime.strptime(plan_date, '%m-%d-%Y').replace(hour=0, minute=0, second=0)).strftime('%Y-%m-%d')
+        else:
+            plan_date = datetime.now(tz).strftime('%Y-%m-%d')
+
+        converted_plan_date = tz.localize(datetime.strptime(plan_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
+
         optimal_plan = await get_optmized_driver_plan(
             user_payload=user_payload,
-            plan_date=today,
+            plan_date=plan_date,
             save_plan=False,
             add_to_existing_plan=True,
-            plan_branch=[branch],
-            shift=shift,
+            plan_branch=[branch] if branch else [],
             behind_schedule_moves=behind_schedule_moves,
             is_in_day_plan=True,
             driver_schedules=driver_schedules
@@ -362,14 +371,17 @@ async def manage_in_day_plan(
 
         recommended_moves = optimal_plan.get('recommended_moves', [])
 
+        if len(recommended_moves) == 0:
+            print(f"No recommended moves found for carrier: {carrier} and plan date: {plan_date} and branch: {branch}")
+            return False
+
         await save_suggestions(
             user_payload=user_payload,
             payload={
                 "branch": branch,
-                "shift": shift,
                 "behind_schedule_moves": behind_schedule_moves
             }, 
-            plan_date=today, 
+            plan_date=plan_date, 
             converted_plan_date=converted_plan_date, 
             suggestions=recommended_moves
         )
@@ -377,7 +389,8 @@ async def manage_in_day_plan(
         return True
 
     except Exception as e:
-        logger.error(e)
+        carrier = user_payload.get('carrier')
+        logger.error(f"Failed to generate in-day plan for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to generate in-day plan: {str(e)}")
 
 
@@ -490,5 +503,6 @@ async def get_optimizer_review_recommendation(
         }
 
     except Exception as e:
-        logger.error(e)
+        carrier = user_payload.get('carrier')
+        logger.error(f"Failed to get optimizer plan recommendation for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to get optimizer plan recommendation: {str(e)}")

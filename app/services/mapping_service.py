@@ -208,6 +208,7 @@ async def add_recommended_returns(user_payload: Dict[str, Any], plan_date: str, 
                             order['country'] = return_location.get('country', '')
                             order['zip_code'] = return_location.get('zip_code', '')
                             order['company_name'] = return_location.get('company_name', '').upper()
+                            order['is_recommended_return'] = True
 
                             prev_order = mapped_load['driverOrder'][indx - 1] if indx > 0 else None
                             if prev_order and prev_order.get('address', {}).get('lat') and order.get('address', {}).get('lat'):

@@ -175,10 +175,7 @@ async def get_schedule_summary(carrier: str) -> Dict[str, Any]:
 async def get_scheduled_plan(
     carrier: str,
     plan_date: str,
-    reference_numbers: list = [],
-    plan_from_time = None,
-    plan_to_time = None,
-    scheduled_moves_only: bool = False
+    reference_numbers: list = []
 ) -> List[Dict[str, Any]]:
     """
     Retrieve scheduled plan data from PostgreSQL for a given carrier and plan date.
@@ -208,16 +205,8 @@ async def get_scheduled_plan(
             conditions = []
             params = [carrier, str(plan_id)]
 
-            if scheduled_moves_only and plan_from_time and plan_to_time:
-                conditions.append(f"""AND ( 
-                    (scheduled_appointment_from >= ${len(params) + 1} AND scheduled_appointment_from <= ${len(params) + 2}) OR 
-                    (scheduled_appointment_to >= ${len(params) + 1} AND scheduled_appointment_to <= ${len(params) + 2})
-                )""")
-                params.append(plan_from_time)
-                params.append(plan_to_time)
-            else:
-                conditions.append(f'AND plan_date::date = ${len(params) + 1}::date')
-                params.append(plan_date)
+            conditions.append(f'AND plan_date::date = ${len(params) + 1}::date')
+            params.append(plan_date)
             
             if reference_numbers:
                 conditions.append(f'AND reference_number = ANY(${len(params) + 1})')

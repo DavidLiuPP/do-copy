@@ -5,12 +5,13 @@ import asyncio
 from copy import deepcopy
 import time
 import asyncio
+import json
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 
 from vrp_optimizer.optimizer import Optimizer
 from vrp_optimizer.assumptions import LATE_ARRIVAL_MINUTES
-from vrp_optimizer.helpers import minute_from_distance, get_all_driver_default_locations, get_yard_data, get_warehouse_visits
+from vrp_optimizer.helpers import calculate_distance, minute_from_distance, get_all_driver_default_locations, get_yard_data, get_warehouse_visits
 from vrp_optimizer.services import handle_assigned_moves, get_completion_time, get_current_plan
 from vrp_optimizer.routing_distance import get_location_distance_matrix_bulk, get_unique_coordinates
 from vrp_optimizer.unplanned_moves import get_unplanned_moves
@@ -28,6 +29,7 @@ from app.modules.optimizer.constants import (
     PLANNING_ASSUMPTIONS
 )
 from app.modules.optimizer.in_day_service import (
+    get_restrict_load_move,
     get_schedule_info_from_driver_schedules,
     update_actionable_moves_for_inday_plan
 )
@@ -88,7 +90,8 @@ async def get_optimal_plan_v3(
     is_in_day_plan: bool = False,
     driver_schedules: List[Dict[str, Any]] = [],
     invalid_moves: List[Dict[str, Any]] = [],
-    dispatch_plan_params: Dict[str, Any] = {}
+    dispatch_plan_params: Dict[str, Any] = {},
+    add_to_existing_plan: bool = False
 ):
     try:
         if len(drivers) == 0:
@@ -98,6 +101,9 @@ async def get_optimal_plan_v3(
                 'driver_schedule': {},
                 'optimizer_input': {}
             }
+
+        if is_in_day_plan:
+            time_limit = 3 * 60
 
         carrier = user_payload.get('carrier')
         timeZone = user_payload.get('timeZone')
@@ -111,11 +117,13 @@ async def get_optimal_plan_v3(
         CARRIER_CONFIG = CARRIER_CONFIGS.get(carrier, {})
         plan_start_minute = CARRIER_CONFIG.get('plan_times', [0, 1440])[0]
         plan_end_minute = CARRIER_CONFIG.get('plan_times', [0, 1440])[1]
+        route_types_for_in_day = CARRIER_CONFIG.get('route_types_for_in_day', {}) if is_in_day_plan else None
 
         # map driver data to vehicle data
         vehicle_data = []
         max_vehicle_end_minute = 0
         for v in drivers:
+
             if not v.get('depot_customer_id'):
                 continue
 
@@ -165,8 +173,22 @@ async def get_optimal_plan_v3(
                 'depot_hash_key': depot_hash_key,
                 'manual_location': [v.get('depot_location', {}).get('lat', 0), v.get('depot_location', {}).get('lng', 0)],
                 'new_terminal': v.get('new_terminal', False),
-                'owner_score': int(v.get('owner_score', 1) or 1),
+                'owner_score': int(v.get('owner_score', 1) or 1)
             }
+
+            driver_route_types = []
+            if route_types_for_in_day:
+                driver_tags = set(v.get('tags', []))
+                if any(tag in route_types_for_in_day.get('Local', []) for tag in driver_tags):
+                    driver_route_types.append('Local')
+                if any(tag in route_types_for_in_day.get('Highway', []) for tag in driver_tags):
+                    driver_route_types.append('Highway')
+            else:
+                if v.get('local'):
+                    driver_route_types.append('Local')
+                if v.get('highway'):
+                    driver_route_types.append('Highway')
+            data['load_route_type'] = driver_route_types
 
             if skip_driver_for_optimizer:
                 data['skip_driver_for_optimizer'] = True
@@ -178,16 +200,27 @@ async def get_optimal_plan_v3(
         if is_in_day_plan:
             actionable_moves = update_actionable_moves_for_inday_plan(actionable_moves, behind_schedule_moves)
 
-        assigned_moves = [m for m in actionable_moves if m.get('is_manually_planned', False)]
-        actionable_moves = [m for m in actionable_moves if not m.get('is_manually_planned', False)]
+
+        fixed_move_field = 'is_manually_planned' if add_to_existing_plan else 'is_active_move'
+        assigned_moves = [m for m in actionable_moves if m.get(fixed_move_field, False)]
+        actionable_moves = [m for m in actionable_moves if not m.get(fixed_move_field, False)]
+
+        if not add_to_existing_plan:
+            # Remove assigned driver from actionable moves if any (This Case will only be there while planning from scratch as we are trying to assign new driver)
+            for m in actionable_moves:
+                m.pop('assigned_driver', None)
 
         all_assigned_moves = deepcopy(assigned_moves)
 
         driver_default_locations = get_all_driver_default_locations(drivers)
 
-        fixed_plan = {}
+        fixed_plan = []
+        restrict_load_move_and_that_driver = []
         if is_in_day_plan:
             vehicle_data, additional_depot_locations = await get_schedule_info_from_driver_schedules(vehicle_data, additional_depot_locations, driver_schedules)
+            # get in-day load (is_rejected is true)
+            moves = await get_restrict_load_move(carrier, converted_plan_date, branch)
+            restrict_load_move_and_that_driver = rejected_driver_moves(moves) if moves else []
         else:
             vehicle_data, additional_depot_locations, fixed_plan = handle_assigned_moves(
                 user_payload,
@@ -221,7 +254,7 @@ async def get_optimal_plan_v3(
                 'reference_number': m.get('reference_number', ''),
                 'reason': m['reason']
             })
-
+        
         optimal_plan = []
         optimizer_input = {}
         optimizer = None
@@ -281,7 +314,10 @@ async def get_optimal_plan_v3(
                     "carrier_id": user_payload.get('carrier'),
                     "plan_date": converted_plan_date,
                     "max_time_dimension_minutes": max_time_dimension_minutes,
-                    "driver_history": driver_history
+                    "chassis_limits": mapped_chassis_limits,
+                    "driver_history": driver_history,
+                    "is_in_day_plan": is_in_day_plan,
+                    "dispatch_plan_params": dispatch_plan_params
                 }
 
                 optimizer = Optimizer(
@@ -302,7 +338,8 @@ async def get_optimal_plan_v3(
                     chassis_limits = mapped_chassis_limits,
                     driver_history = driver_history,
                     is_in_day_plan=is_in_day_plan,
-                    dispatch_plan_params=dispatch_plan_params
+                    dispatch_plan_params=dispatch_plan_params,
+                    restrict_load_move_and_that_driver=restrict_load_move_and_that_driver
                 )
                 
                 # Run the OR-Tools optimization in a thread pool to prevent blocking
@@ -319,7 +356,7 @@ async def get_optimal_plan_v3(
                     driver_schedule = d_schedule
             
             except Exception as e:
-                logger.error(f"Error during optimization: {str(e)}")
+                logger.error(f"Error during optimization for carrier: {carrier}: {str(e)}")
             
             end_time = time.time()
             print(f"Time taken by vrp optimizer: {end_time - start_time} seconds for {len(moves)} moves")
@@ -336,7 +373,7 @@ async def get_optimal_plan_v3(
                 }
 
             current_plan = get_current_plan(all_assigned_moves)
-            formatted_current_plan = map_fixed_plan_to_driver_plan(current_plan, drivers, timeZone, converted_plan_date, distance_unit)
+            formatted_current_plan = map_fixed_plan_to_driver_plan(user_payload, current_plan, drivers, timeZone, converted_plan_date, distance_unit)
             return {
                 'optimal_plan': formatted_current_plan,
                 'invalid_moves': invalid_moves,
@@ -347,7 +384,7 @@ async def get_optimal_plan_v3(
         for m in actionable_moves:
             m['is_new_move'] = True
 
-        optimal_plan = map_route_summary_to_driver_plan(assigned_moves + actionable_moves, optimal_plan, drivers, timeZone, converted_plan_date)
+        optimal_plan = map_route_summary_to_driver_plan(user_payload, assigned_moves + actionable_moves, optimal_plan, drivers, timeZone, converted_plan_date)
 
         if is_in_day_plan:
             return {
@@ -357,7 +394,7 @@ async def get_optimal_plan_v3(
             'optimizer_input': optimizer_input
         }
 
-        formatted_fixed_plan = map_fixed_plan_to_driver_plan(fixed_plan, drivers, timeZone, converted_plan_date, distance_unit)
+        formatted_fixed_plan = map_fixed_plan_to_driver_plan(user_payload, fixed_plan, drivers, timeZone, converted_plan_date, distance_unit)
 
         # get unplanned moves and the reason for unplanned moves
         if len(moves_copy) > len(optimal_plan):
@@ -374,7 +411,7 @@ async def get_optimal_plan_v3(
             'optimizer_input': optimizer_input
         }
     except Exception as e:
-        logger.error(e)
+        logger.error(f"Failed to get optimal plan v3 for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to get optimal plan v3: {str(e)}")
 
 async def map_actionable_moves_for_optimizer(
@@ -516,6 +553,7 @@ async def map_actionable_moves_for_optimizer(
                 
                 move_data = {
                     **move,
+                    "load_id": move.get('_id', ''),
                     "_id": move.get('reference_number', ''),
                     "start_loc": [
                         move.get('move', [])[0].get('address', {}).get("lat", 0),
@@ -532,10 +570,12 @@ async def map_actionable_moves_for_optimizer(
                     "minutes_on_road": travel_time,
                     "early_arrival_waiting": early_arrival_waiting,
                     "total_waiting_time": move.get('waiting_time'),
+                    'total_duration': travel_time + early_arrival_waiting + move.get('waiting_time', 0),
                     "expected_from_minute": int(expected_from_minute),
                     "expected_to_minute": int(expected_to_minute),
                     'is_highway': move.get('routeType') == 'Highway',
                     'is_local': move.get('routeType') == 'Local',
+                    'route_type': move.get('routeType', '')
                 }
 
                 if move.get('is_assigned_move', False):
@@ -631,7 +671,7 @@ async def map_actionable_moves_for_optimizer(
 
         return moves, skipped_moves
     except Exception as e:
-        logger.error(e)
+        logger.error(f"Failed to map move data for plan v2 for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to map move data for plan v2: {str(e)}")
     
     
@@ -711,9 +751,10 @@ async def free_flow_empty_return_assigned_couple_moves(carrier: str, moves: List
                         move['expected_to_minute'] = event_appt_to
     return moves
 
-def map_route_summary_to_driver_plan(loads: List[Dict[str, Any]], optimal_plan: List[Dict[str, Any]], drivers: List[Dict[str, Any]], timeZone: str, converted_plan_date: datetime):
+def map_route_summary_to_driver_plan(user_payload: Dict[str, Any], loads: List[Dict[str, Any]], optimal_plan: List[Dict[str, Any]], drivers: List[Dict[str, Any]], timeZone: str, converted_plan_date: datetime):
     try:
         recommended_moves = []
+        distance_unit = user_payload.get('distanceUnit', 'mi')
         for i, dData in enumerate(optimal_plan):
             for mData in dData.get('node'):
                 m_reference_number = mData.get('reference_number')
@@ -780,6 +821,9 @@ def map_route_summary_to_driver_plan(loads: List[Dict[str, Any]], optimal_plan: 
                     for key in del_chassis_event_keys:
                         del chassis_termination_event[key]
 
+                if len(load.get('actual_driver_order', [])) > 0:
+                    load['revenue'] = calculate_per_mile_revenue(load, move_copy, distance_unit)
+
                 mapped_assignment = {
                     'load_id': load['_id'],
                     'reference_number': load['reference_number'],
@@ -806,17 +850,19 @@ def map_route_summary_to_driver_plan(loads: List[Dict[str, Any]], optimal_plan: 
                     'chassis_termination_event': chassis_termination_event,
                     'is_free_flow_move': load.get('is_free_flow_move', False),
                     'is_combined_trip': load.get('is_combined_trip', False),
-                    'plan_assumptions': plan_assumptions
+                    'plan_assumptions': plan_assumptions,
+                    'terminal': load.get('terminal', '')
                 }
                 recommended_moves.append(mapped_assignment)
 
         return recommended_moves
     except Exception as e:
-        logger.error(e)
+        carrier = user_payload.get('carrier')
+        logger.error(f"Failed to get optimal plan v2 data mapper for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to get optimal plan v2 data mapper: {str(e)}")
 
-
 def map_fixed_plan_to_driver_plan(
+    user_payload: Dict[str, Any],
     fixed_plan: List[Dict[str, Any]],
     drivers: List[Dict[str, Any]],
     timeZone: str,
@@ -825,7 +871,6 @@ def map_fixed_plan_to_driver_plan(
 ):
     try:
         formatted_fixed_plan = []
-
         for driver_id, driver_plan in fixed_plan.items():
             driver = next((d for d in drivers if d.get('_id') == driver_id), None)
             driver_name = f"{driver['name']} {driver['last_name']}" if pd.notna(driver['name']) else ""
@@ -882,6 +927,9 @@ def map_fixed_plan_to_driver_plan(
 
 
                     mapped_move.append(event)
+                
+                if len(load.get('actual_driver_order', [])) > 0:
+                    load['revenue'] = calculate_per_mile_revenue(load, move_copy, distance_unit)
 
                 mapped_assignment = {
                             'load_id': load['_id'],
@@ -902,7 +950,8 @@ def map_fixed_plan_to_driver_plan(
                             'is_modified_move': False,
                             'is_assigned_move': True,
                             'is_new_move': False,
-                            'driver_index': -1
+                            'driver_index': -1,
+                            'terminal': load.get('terminal', '')
                         }
                 
                 formatted_fixed_plan.append(mapped_assignment)
@@ -911,3 +960,96 @@ def map_fixed_plan_to_driver_plan(
     except Exception as e:
         print(f"Error in map_fixed_plan_to_driver_plan: {str(e)}")
         raise Exception(f"Failed to map fixed plan to driver plan: {str(e)}")
+
+def rejected_driver_moves(restricted_moves: List[Dict[str, Any]]):
+    try:
+        restricted_driver_for_moves = [dict(move) for move in restricted_moves]
+        result = []
+        driver_moves = {}
+        
+        for r_move in restricted_driver_for_moves:
+            driver_id = r_move.get('suggested_driver')
+            
+            # check driver id is already in the driver_moves
+            if not driver_id in driver_moves:
+                driver_moves[driver_id] = []
+
+            move_data = {
+                "load_id": r_move.get('load_id')
+            }
+            if not r_move.get('is_trip', False):
+                move_detail = json.loads(r_move.get('move', []))
+                move_id = move_detail[-1].get('moveId') if len(move_detail) > 0 else None
+                if move_id:
+                    move_data['move_id'] = move_id
+
+            driver_moves[driver_id].append(move_data)
+
+        # Convert dict to array format
+        for driver_id, moves in driver_moves.items():
+            result.append({
+                "driver_id": driver_id,
+                "moves": moves
+            })
+
+        return result
+    except Exception as e:
+        print(f"Error in restricted_driver_for_moves: {str(e)}")
+        return []
+def calculate_per_mile_revenue(load, suggested_driver_order, distance_unit: str):
+    try:
+        # Create lookup dict for suggested events to avoid repeated loops
+        suggested_events_map = {e.get('_id'): (i, e) for i, e in enumerate(suggested_driver_order)}
+        
+        original_driver_order = load.get('actual_driver_order', [])
+        new_driver_order = []
+        is_new_event_added = False
+
+        for event in original_driver_order:
+            # O(1) lookup instead of O(n) search
+            match_event_data = suggested_events_map.get(event.get('_id'))
+            
+            if match_event_data:
+                match_event_index, match_event = match_event_data
+                new_driver_order.append(match_event)
+
+                # Check next event
+                next_index = match_event_index + 1
+                if next_index < len(suggested_driver_order):
+                    next_event = suggested_driver_order[next_index]
+                    # O(1) lookup instead of O(n) search
+                    if next_event and not any(e.get('_id') == next_event.get('_id') for e in original_driver_order):
+                        new_driver_order.append(next_event)
+                        is_new_event_added = True
+            else:
+                if is_new_event_added:
+                    last_event = new_driver_order[-1]
+                    last_addr = last_event.get('address', {})
+                    curr_addr = event.get('address', {})
+                    
+                    # Check coordinates exist before calculation
+                    if all((last_addr.get('lat'), last_addr.get('lng'), 
+                           curr_addr.get('lat'), curr_addr.get('lng'))):
+                        event['distance'] = calculate_distance(
+                            last_addr['lat'], last_addr['lng'],
+                            curr_addr['lat'], curr_addr['lng'],
+                            distance_unit
+                        )
+                        is_new_event_added = False
+                new_driver_order.append(event)
+
+        # Calculate total distance excluding first event distance
+        total_distance = sum(event.get('distance', 0) for event in new_driver_order)
+        total_distance -= suggested_driver_order[0].get('distance', 0) if suggested_driver_order else 0
+
+        # Calculate revenue only if both distance and revenue exist
+        revenue = load.get('revenue', 0)
+        if total_distance > 0 and revenue > 0:
+            per_mile_revenue = revenue / total_distance
+            return per_mile_revenue * load['distance']
+
+        return revenue
+
+    except Exception as e:
+        logger.error(f"Error in calculate_per_mile_revenue: {str(e)}")
+        return load.get('revenue', 0)

@@ -525,12 +525,12 @@ async def plan_loads_with_appointments_to_scheduler(
                         continue
 
             except Exception as e:
-                logger.error(f"Error planning loads with appointments to scheduler: {str(e)}")
+                logger.error(f"Error planning loads with appointments to scheduler for carrier: {carrier}: {str(e)}")
                 continue
 
         return optimal_plan_for_scheduled_moves, partially_planned_moves
     except Exception as e:
-        logger.error(f"Error planning loads with appointments to scheduler: {str(e)}")
+        logger.error(f"Error planning loads with appointments to scheduler for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to plan loads with appointments to scheduler: {str(e)}")
 
 
@@ -673,7 +673,7 @@ async def generate_scheduled_plan(
         return planned_moves
     
     except Exception as e:
-        logger.error(f"Error getting scheduled plan: {str(e)}")
+        logger.error(f"Error getting scheduled plan for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to get scheduled plan: {str(e)}")
 
 
@@ -741,7 +741,7 @@ async def predict_next_move(user_payload: Dict[str, Any], plan_date: str, option
         try:
             mapped_loads = await add_recommended_returns(user_payload, plan_date.strftime('%Y-%m-%d'), mapped_loads)
         except Exception as e:
-            logger.error(f"Error adding recommended returns: {str(e)}")
+            logger.error(f"Error adding recommended returns for carrier: {carrier}: {str(e)}")
         
         # store mapped loads input in db
         if options.get('store_plan'):
@@ -767,7 +767,7 @@ async def predict_next_move(user_payload: Dict[str, Any], plan_date: str, option
         }
         
     except Exception as e:
-        logger.error(f"Error predicting next move: {str(e)}")
+        logger.error(f"Error predicting next move for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to predict next move: {str(e)}")
 
 
@@ -925,7 +925,7 @@ async def replan_modified_move(carrier: str, action: str, load_payload: Dict[str
         
         return
     except Exception as e:
-        logger.error(e)
+        logger.error(f"Failed to replan modified move for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to replan modified move: {str(e)}")
 
 
@@ -944,7 +944,7 @@ async def retrieve_scheduled_moves_for_optimizer(
             carrier,
             load_criteria,
             2000,
-            { "ignored_pending_loads": True },
+            plan_from_time,
         )
 
         # filter scheduled loads if type_of_loads is IMPORT then containerNo should be present

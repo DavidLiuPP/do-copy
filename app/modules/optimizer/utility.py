@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.modules.optimizer.constants import EVENT_TIME_MAP, CARRIER_CONFIGS, YARD_ALLOWED_OPERATIONS
 from app.utils.distance_calc import calculate_distance_between_locations
 from app.services.redis_service import get_shift_times
-from app.postgres_services.drayage_intelligence_service import get_drayage_intelligence
 from app.postgres_connection import get_postgres_client
 from app.synced_db_connection import get_synced_db_client
 
@@ -86,6 +85,11 @@ def check_move_validity(
 
         if load.get('is_completed_move'):
             return True, ''
+        
+        is_empty_return_move = (
+            any(event.get('type') == 'RETURNCONTAINER' for event in move) and 
+            not any(event.get('type') in ('PULLCONTAINER', 'DELIVERLOAD') for event in move)
+        )
 
         for event_index, event in enumerate(move):
             event_type = event.get('type')
@@ -103,17 +107,15 @@ def check_move_validity(
                 return False, 'INVALID_MOVE_LOCATION_MISSING'
 
             if event_type == 'RETURNCONTAINER' and not event.get('customerId'):
-                if CARRIER_CONFIGS.get(carrier_id, {}).get('wait_for_empty_appt', False):
-                    is_hook_return_move = move[event_index - 1].get('type') == 'HOOKCONTAINER' and event.get('type') == 'RETURNCONTAINER' if event_index > 0 else False
-                    if is_hook_return_move:
-                        should_wait = is_waiting_for_empty_appt(
-                            carrier_id, 
-                            move[event_index - 1], 
-                            event, 
-                            distance_unit
-                        )
-                        if should_wait:
-                            return False, 'WAITING_FOR_EMPTY_APPT'
+                if CARRIER_CONFIGS.get(carrier_id, {}).get('wait_for_empty_appt', False) and is_empty_return_move:
+                    should_wait = is_waiting_for_empty_appt(
+                        carrier_id=carrier_id, 
+                        hook_event=move[event_index - 1], 
+                        return_event=event,
+                        distance_unit=distance_unit
+                    )
+                    if should_wait:
+                        return False, 'WAITING_FOR_EMPTY_APPT'
 
                 return False, event_type + '_LOCATION_MISSING'
 
@@ -155,27 +157,37 @@ def check_move_validity(
                     # Check mandatory appointment window
                     if port_data.get("mandatory_appt") and not port_data.get("freeflow_appt"):
                         if not actual_appt:
-                            if CARRIER_CONFIGS.get(carrier_id, {}).get('wait_for_empty_appt', False):
-                                is_hook_return_move = move[event_index - 1].get('type') == 'HOOKCONTAINER' and event.get('type') == 'RETURNCONTAINER' if event_index > 0 else False
-                                if is_hook_return_move:
-                                    should_wait = is_waiting_for_empty_appt(
-                                        carrier_id, 
-                                        move[event_index - 1], 
-                                        event, 
-                                        distance_unit
-                                    )
-                                    if should_wait:
-                                        return False, 'WAITING_FOR_EMPTY_APPT'
+                            if is_empty_return_move and CARRIER_CONFIGS.get(carrier_id, {}).get('wait_for_empty_appt', False):
+                                should_wait = is_waiting_for_empty_appt(
+                                    carrier_id=carrier_id, 
+                                    hook_event=move[event_index - 1], 
+                                    return_event=event, 
+                                    distance_unit=distance_unit
+                                )
+                                if should_wait:
+                                    return False, 'WAITING_FOR_EMPTY_APPT'
+                            
+                            if not is_empty_return_move and CARRIER_CONFIGS.get(carrier_id, {}).get('ignore_return_appointment_for_live_unload', False):
+                                mandatory_start = datetime.strptime(port_data["mandatory_appt"]["start_time"], "%H:%M").time()
+                                mandatory_end = datetime.strptime(port_data["mandatory_appt"]["end_time"], "%H:%M").time()
 
+                                event['appointment_from'] = converted_plan_date.replace(hour=mandatory_start.hour, minute=mandatory_start.minute).isoformat()
+                                appointment_to = converted_plan_date.replace(hour=mandatory_end.hour, minute=mandatory_end.minute)
+
+                                if mandatory_end <= mandatory_start:
+                                    appointment_to = mandatory_end + timedelta(days=1)
+
+                                event['appointment_to'] = appointment_to.isoformat()
+                                continue
+                            
                             return False, event_type + '_APPT_CONSTRAINT_FAILED'
+                        else:
+                            mandatory_start = datetime.strptime(port_data["mandatory_appt"]["start_time"], "%H:%M").time()
+                            mandatory_end = datetime.strptime(port_data["mandatory_appt"]["end_time"], "%H:%M").time()
 
-                        mandatory_start = datetime.strptime(port_data["mandatory_appt"]["start_time"], "%H:%M").time()
-                        mandatory_end = datetime.strptime(port_data["mandatory_appt"]["end_time"], "%H:%M").time()
-
-                        is_valid_time = check_time_window(mandatory_start, mandatory_end, actual_appt.time())
-
-                        if is_valid_time:
-                            continue
+                            is_valid_time = check_time_window(mandatory_start, mandatory_end, actual_appt.time())
+                            if is_valid_time:
+                                continue
 
                     if port_data.get("freeflow_appt") and not actual_appt:
                         freeflow_start = datetime.strptime(port_data["freeflow_appt"]["start_time"], "%H:%M").time()
@@ -215,8 +227,7 @@ async def modify_move_for_invalid_move(
     user_payload: Dict[str, Any], 
     move: List[Dict[str, Any]], 
     type: str, 
-    position: str = 'end',
-    load: Dict[str, Any] = None
+    position: str = 'end'
 ) -> List[Dict[str, Any]]:
     """
     Modified to fetch and use drop yard configuration from database.
@@ -233,8 +244,6 @@ async def modify_move_for_invalid_move(
         ]
         
         distance_unit = user_payload.get('distanceUnit', 'mi')
-
-        drayage_config = user_payload.get('drayage_config', {})
 
         ref_location_to_drop = None
         if use_nearest_to_delivery_yard:
@@ -268,9 +277,7 @@ async def modify_move_for_invalid_move(
                 yard_locations=yard_locations, 
                 location=ref_location_to_drop, 
                 distance_unit=distance_unit,
-                carrier_id=carrier_id,
-                load=load,
-                drayage_config=drayage_config  # Pass config to avoid another DB call
+                carrier_id=carrier_id
             )
             
             if len(copied_move) == 1 and last_event.get('customerId') == nearest_yard_location.get('customerId'):
@@ -297,9 +304,6 @@ async def modify_move_for_invalid_move(
                 yard_locations, 
                 ref_location_to_drop, 
                 distance_unit,
-                carrier_id=carrier_id,
-                load=load,
-                drayage_config=drayage_config
             )
             
             if first_event.get('customerId') == nearest_yard_location.get('customerId'):
@@ -319,7 +323,7 @@ async def modify_move_for_invalid_move(
 
         return copied_move
     except Exception as e:
-        logger.error(f"Error modifying move for invalid move: {str(e)}")
+        logger.error(f"Error modifying move for invalid move for carrier: {carrier_id}: {str(e)}")
         raise
 
 
@@ -444,16 +448,13 @@ def populate_appointment_times_to_events(
         return actionable_move
         
     except Exception as e:
-        logger.error(f"Error extracting recommended appointment times: {str(e)}")
+        logger.error(f"Error extracting recommended appointment times for carrier: {carrier}: {str(e)}")
         raise Exception(f"Failed to extract recommended appointment times: {str(e)}")
 
 def get_nearest_yard_location(
     yard_locations: List[Dict[str, Any]], 
     location: Dict[str, Any], 
-    distance_unit: str = 'mi',
-    carrier_id: str = None,
-    load: Dict[str, Any] = None,
-    drayage_config: Dict[str, Any] = None  # Pass config to avoid multiple DB calls
+    distance_unit: str = 'mi'
 ) -> Dict[str, Any]:
     """
     Get the appropriate yard for DROPCONTAINER events.
@@ -463,48 +464,7 @@ def get_nearest_yard_location(
         # If only one yard available, return it
         if len(yard_locations) == 1:
             return yard_locations[0]
-        
-        # Use passed config or fetch from database
-        if not drayage_config:
-            logger.warning("Drayage config not passed, fetching from database")
-            pass
-        
-        # Check for new drop yard configuration
-        if drayage_config and drayage_config.get('empty_drop_yard_config'):
-            yard_config = drayage_config.get('empty_drop_yard_config')
-            logic_type = yard_config.get('logic_type')
-            
-            if logic_type == 'EAST_WEST_SPLIT':
-                return get_drop_yard_east_west_split(
-                    yard_locations, 
-                    location, 
-                    yard_config, 
-                    load
-                )
-            elif logic_type == 'NEAREST_TO_DELIVERY':
-                # Quality Container logic - find nearest yard
-                return min(yard_locations, key=lambda x: calculate_distance_between_locations(
-                    location['address'], 
-                    x['address'], 
-                    distance_unit
-                ))
-            elif logic_type == 'SINGLE_YARD':
-                # Use configured single yard
-                single_yard_id = yard_config.get('yards', {}).get('default', {}).get('yard_id')
-                if single_yard_id:
-                    matching_yard = next(
-                        (y for y in yard_locations if y.get('customerId') == single_yard_id),
-                        None
-                    )
-                    if matching_yard:
-                        return matching_yard
-        
-        # Fallback to default behavior based on carrier
-        if carrier_id == '641a10875b159a160742327e':  # RoadEx
-            # Hardcoded fallback for RoadEx if config is missing
-            return get_roadex_yard_fallback(yard_locations, location, load)
-        
-        # Default: nearest yard
+
         return min(yard_locations, key=lambda x: calculate_distance_between_locations(
             location['address'], 
             x['address'], 
@@ -523,8 +483,6 @@ async def get_recommended_yard_location(
     location: Dict[str, Any],
     distance_unit: str = 'mi',
     carrier_id: str = None,
-    load: Dict[str, Any] = None,
-    drayage_config: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
     Get the recommended yard location for a given location.
@@ -535,8 +493,12 @@ async def get_recommended_yard_location(
         # Try to get yard recommendations from database
         from_location, to_location, recommendation_type = analyze_move_pattern(move, drop_event_index)
         
-        recommended_yard_customer_id = await get_yard_recommendation_from_db(from_location, to_location, recommendation_type, carrier_id, yard_locations)
-        
+        is_recommended_return = move[drop_event_index].get('is_recommended_return')
+        if to_location is None or is_recommended_return:
+            recommended_yard_customer_id = await get_yard_recommendation_by_from_location(from_location, recommendation_type, carrier_id, yard_locations)
+        else:
+            recommended_yard_customer_id = await get_yard_recommendation_from_db(from_location, to_location, recommendation_type, carrier_id, yard_locations)
+                
         synced_db = get_synced_db_client()
         pool = await synced_db.get_pool()
         
@@ -574,13 +536,13 @@ async def get_recommended_yard_location(
             
         if not recommended_yard:
             # Fallback to nearest yard if no recommendations found
-            recommended_yard = get_nearest_yard_location(yard_locations, location, distance_unit, carrier_id, load, drayage_config)        
+            recommended_yard = get_nearest_yard_location(yard_locations, location, distance_unit)        
         return recommended_yard
         
     except Exception as e:
         logger.error(f"Error in get_recommended_yard_location: {str(e)}")
         # Safe fallback to nearest yard
-        return get_nearest_yard_location(yard_locations, location, distance_unit, carrier_id, load, drayage_config)
+        return get_nearest_yard_location(yard_locations, location, distance_unit)
     
 def analyze_move_pattern(move: List[Dict[str, Any]], drop_event_index: int) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
@@ -653,6 +615,59 @@ async def get_yard_recommendation_from_db(
             
             if not record:
                 logger.debug(f"No yard recommendation found for pattern: {recommendation_type} {from_location} -> {to_location}")
+                return None
+            
+            # Find the recommended yard in available yard locations
+            recommended_customer_id = record['recommended_customer_id']
+            
+            return recommended_customer_id
+                
+    except Exception as e:
+        logger.error(f"Error getting yard recommendation from database: {str(e)}")
+        return None
+
+async def get_yard_recommendation_by_from_location(
+    from_location: str,
+    recommendation_type: str,
+    carrier_id: str, 
+    yard_locations: List[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """
+    Get yard recommendation from database based on from_location.
+    """
+    try:
+        if not from_location or not carrier_id or not recommendation_type:
+            return None
+        
+        # Query yard recommendations from database
+        postgres = get_postgres_client()
+        pool = await postgres.get_pool()
+        
+        query = """
+        SELECT 
+            carrier, 
+            from_customer_id, 
+            to_customer_id, 
+            recommended_customer_id,
+            (event_counts ->> 'total_dropcontainer')::int AS total_dropcontainer
+        FROM public.yard_recommendations 
+        WHERE from_customer_id = $1
+        AND carrier = $2
+        AND recommendation_type = $3
+        ORDER BY total_dropcontainer DESC
+        LIMIT 1
+        """
+        
+        async with pool.acquire() as conn:
+            record = await conn.fetchrow(
+                query, 
+                from_location,
+                carrier_id, 
+                recommendation_type
+            )
+            
+            if not record:
+                logger.debug(f"No yard recommendation found for pattern: {recommendation_type} {from_location}")
                 return None
             
             # Find the recommended yard in available yard locations
@@ -752,40 +767,6 @@ def check_drop_yard_condition(load: Dict[str, Any], condition: Dict[str, Any]) -
         return load_value.upper().endswith(str(value).upper())
     
     return False
-
-
-def get_roadex_yard_fallback(
-    yard_locations: List[Dict[str, Any]],
-    delivery_location: Dict[str, Any],
-    load: Dict[str, Any] = None
-) -> Dict[str, Any]:
-    """
-    Fallback logic for RoadEx if database configuration is missing.
-    This ensures the system continues to work even without DB config.
-    """
-    # Hardcoded yard IDs as fallback
-    ONTARIO_YARD_ID = '67460e1a105855c40130a2dc'
-    Q_STREET_YARD_ID = '641a138d4afd3216030be8ec'
-    AMAZON_YARD_ID = '66d8e4486f8e3a829bd63aa5'
-    ONTARIO_LNG = -117.624773
-    
-    ontario_yard = next((y for y in yard_locations if y.get('customerId') == ONTARIO_YARD_ID), None)
-    q_street_yard = next((y for y in yard_locations if y.get('customerId') == Q_STREET_YARD_ID), None)
-    amazon_yard = next((y for y in yard_locations if y.get('customerId') == AMAZON_YARD_ID), None)
-    
-    delivery_lng = delivery_location.get('address', {}).get('lng')
-    
-    if not delivery_lng:
-        return q_street_yard if q_street_yard else yard_locations[0]
-    
-    if delivery_lng > ONTARIO_LNG:
-        return ontario_yard if ontario_yard else yard_locations[0]
-    
-    # Check if Amazon load
-    if load and str(load.get('consigneeName', '')).upper().startswith('AMZN'):
-        return amazon_yard if amazon_yard else q_street_yard if q_street_yard else yard_locations[0]
-    
-    return q_street_yard if q_street_yard else yard_locations[0]
 
 
 def filter_drivers_by_shift(drivers: List[Dict[str, Any]], shift: str) -> List[Dict[str, Any]]:

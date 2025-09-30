@@ -32,13 +32,13 @@ async def get_time_zone(carrier_id: str) -> str:
         return carrier["homeTerminalTimezone"]
 
     except ConnectionError as e:
-        logger.error(f"Database connection error: {str(e)}")
+        logger.error(f"Database connection error for carrier_id: {carrier_id}: {str(e)}")
         raise
     except ValueError as e:
-        logger.error(f"Value error: {str(e)}")
+        logger.error(f"Value error for carrier_id: {carrier_id}: {str(e)}")
         raise
     except Exception as e:
-        logger.error(f"Error retrieving time zone: {str(e)}")
+        logger.error(f"Error retrieving time zone for carrier_id: {carrier_id}: {str(e)}")
         raise Exception(f"Failed to retrieve time zone: {str(e)}")
 
 
@@ -88,13 +88,13 @@ async def get_carrier_preferences(carrier_id: str) -> Dict[str, str]:
         return result
 
     except ConnectionError as e:
-        logger.error(f"Database connection error: {str(e)}")
+        logger.error(f"Database connection error for carrier_id: {carrier_id}: {str(e)}")
         raise
     except ValueError as e:
-        logger.error(f"Value error: {str(e)}")
+        logger.error(f"Value error for carrier_id: {carrier_id}: {str(e)}")
         raise
     except Exception as e:
-        logger.error(f"Error retrieving carrier preferences: {str(e)}")
+        logger.error(f"Error retrieving carrier preferences for carrier_id: {carrier_id}: {str(e)}")
         raise RuntimeError(f"Failed to retrieve carrier preferences: {str(e)}")
 
 

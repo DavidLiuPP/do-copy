@@ -45,7 +45,7 @@ async def map_actionable_moves(
 
         drayage_intelligence = await get_drayage_intelligence(
             carrier, 
-            ['is_exclude_from_scheduler', 'exclude_locations_for_scheduler', 'empty_drop_yard_config', 'empty_drop_logic_version']
+            ['is_exclude_from_scheduler', 'exclude_locations_for_scheduler']
         )
         user_payload['drayage_config'] = drayage_intelligence
         
@@ -114,7 +114,7 @@ async def map_actionable_moves(
                         })
                         continue
 
-                    modified_move = await modify_move_for_invalid_move(user_payload, actionable_move, event_type, 'end', load_copy)
+                    modified_move = await modify_move_for_invalid_move(user_payload, actionable_move, event_type, 'end')
                     modified_move = populate_appointment_times_to_events(
                         user_payload, [load_copy], modified_move, converted_plan_date, 
                         time_prediction, location_office_hours
@@ -352,7 +352,7 @@ async def map_loads_for_optimizer(
         order_datas = []
         order_related_free_flow_trips = {}
 
-        allow_to_plan_following_moves = CARRIER_CONFIGS.get(user_payload.get('carrier'), {}).get('allow_to_plan_following_moves', False)
+        prevent_to_plan_following_moves = CARRIER_CONFIGS.get(user_payload.get('carrier'), {}).get('prevent_to_plan_following_moves', False)
 
         if len(unique_order_ids) > 0:
             try:
@@ -372,6 +372,13 @@ async def map_loads_for_optimizer(
         for load in loads:
             is_move_included = False
             try:
+                if load.get('status') == 'PENDING':
+                    invalid_moves.append({
+                        'reference_number': load.get('reference_number', ''),
+                        'reason': 'PENDING_LOAD'
+                    })
+                    continue
+
                 # find scheduled plan for the load using reference number, should be an array of all that matches
                 scheduled_plan = [plan for plan in scheduled_plans if plan['reference_number'] == load['reference_number']]
                 is_reposition_scheduled = any(plan['predicted_next_move'] == 'Reposition' for plan in scheduled_plan)
@@ -384,6 +391,7 @@ async def map_loads_for_optimizer(
                     continue
 
                 for move_index, actionable_move in enumerate(moves):
+                    load['actual_driver_order'] = load.get('driverOrder', [])
                     # skip if the move is not in the scheduled plan or not manually planned
                     is_manually_planned = any(event.get('is_manually_planned') for event in actionable_move)
                     is_active_move = any(event.get('arrived') and not event.get('isVoidOut') for event in actionable_move)
@@ -423,7 +431,7 @@ async def map_loads_for_optimizer(
                     previous_move = moves[move_index - 1] if move_index > 0 else None
                     is_previous_move_pending = previous_move and any(not event.get('departed') and not event.get('isVoidOut') for event in previous_move)
                     if is_previous_move_pending:
-                        if not allow_to_plan_following_moves:
+                        if prevent_to_plan_following_moves:
                             load['error_reason'] = 'MOVE_IS_NOT_READY_TO_START'
                             continue
 

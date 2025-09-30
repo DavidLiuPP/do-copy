@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from app.services.redis_service import get_shift_times
 from datetime import datetime
 from bson import ObjectId
@@ -113,12 +113,12 @@ async def get_behind_schedule_moves_for_in_day_plan(
                         'driverOrder': move
                     })
             except Exception as e:
-                logger.error(f"Error getting behind schedule moves for in day plan: Error: {str(e)}")
+                logger.error(f"Error getting behind schedule moves for in day plan for carrier: {carrier}: {str(e)}")
                 continue
 
         return assigned_moves
     except Exception as e:
-        logger.error(f"Error getting behind schedule moves for in day plan: {str(e)}")
+        logger.error(f"Error getting behind schedule moves for in day plan for carrier: {carrier}: {str(e)}")
         raise
    
 
@@ -139,9 +139,14 @@ async def get_schedule_info_from_driver_schedules(vehicle_data: List[Dict[str, A
                     continue
 
                 if matched_driver_schedule.get('last_location_eta'):
-                    v['start_minute'] = int(matched_driver_schedule.get('last_location_eta'))
+                    if matched_driver_schedule.get('is_hos_affected', False):
+                        current_start_minute = v.get('start_minute', 0)
+                        if matched_driver_schedule.get('last_location_eta', 0) > current_start_minute:
+                            v['start_minute'] = int(matched_driver_schedule.get('last_location_eta', 0))
+                            v['is_hos_affected'] = True
+                    else:
+                        v['start_minute'] = int(matched_driver_schedule.get('last_location_eta'))
 
-                v['start_location'] = matched_driver_schedule.get('last_location')
                 v['max_working_minutes'] = int(v['max_working_minutes'] - matched_driver_schedule.get('working_minutes', 0))
 
                 if v['start_minute'] >= v['end_minute']:
@@ -153,6 +158,8 @@ async def get_schedule_info_from_driver_schedules(vehicle_data: List[Dict[str, A
                 if not matched_driver_schedule.get('last_location'):
                     vehicles.append(v)
                     continue
+
+                v['start_location'] = matched_driver_schedule.get('last_location')
 
                 matched_depot = next((d for d in depot_locations if d.get('depot_customer_id') == matched_driver_schedule.get('last_location')), None)
 
@@ -188,14 +195,14 @@ async def save_suggestions(
     try:
 
         branch = payload.get('branch')
-        shift = payload.get('shift')
 
         postgres = PostgresConnection()
         pool = await postgres.get_pool()
 
         async with pool.acquire() as conn:
-            REMOVE_SUGGESTIONS_QUERY = "DELETE FROM in_day_plan_moves WHERE carrier = $1 AND plan_date::date = $2 AND branch = $3 AND shift = $4 AND is_rejected = false"
-            await conn.execute(REMOVE_SUGGESTIONS_QUERY, user_payload.get('carrier'), converted_plan_date, branch or '', shift or '')
+            REMOVE_SUGGESTIONS_QUERY = "DELETE FROM in_day_plan_moves WHERE carrier = $1 AND plan_date = $2 AND branch = $3 AND is_rejected = false"
+            await conn.execute(REMOVE_SUGGESTIONS_QUERY, user_payload.get('carrier'), converted_plan_date.date(), branch or '')
+            print(f"Removed suggestions for carrier: {user_payload.get('carrier')} and plan date: {plan_date} and branch: {branch}")
 
             bulk_insert_values = []
             for suggestion in suggestions:
@@ -203,7 +210,7 @@ async def save_suggestions(
                     "carrier": user_payload.get('carrier'),
                     "plan_date": plan_date,
                     "branch": branch or '',
-                    "shift": shift or '',
+                    "shift": '',
                     "move": suggestion.get('move', []),
                     "load_id": suggestion.get('load_id'),
                     "suggested_driver": suggestion.get('assigned_driver'),
@@ -246,11 +253,43 @@ async def save_suggestions(
                         VALUES {', '.join(bulk_insert_values)}
                     """
                     await conn.execute(SQL)
+                    print(f"Saved suggestions for carrier: {user_payload.get('carrier')} and plan date: {plan_date} and branch: {branch}, Total suggestions: {len(bulk_insert_values)}")
                 except Exception as e:
-                    logger.error(f"Error saving suggestions in bulk: {str(e)}")
+                    carrier = user_payload.get('carrier')
+                    logger.error(f"Error saving suggestions in bulk for carrier: {carrier}: {str(e)}")
                     raise e
     
         return
     except Exception as e:
-        logger.error(f"Error saving suggestions: {str(e)}")
+        carrier = user_payload.get('carrier')
+        logger.error(f"Error saving suggestions for carrier: {carrier}: {str(e)}")
+        raise e
+
+async def get_restrict_load_move(carrier: str, converted_plan_date: datetime, branch: Optional[List[str]] = None):
+    try:
+        postgres = PostgresConnection()
+        pool = await postgres.get_pool()
+
+        async with pool.acquire() as conn:
+            # Base query
+            query = """
+                SELECT * 
+                FROM public.in_day_plan_moves
+                WHERE carrier = $1
+                  AND plan_date = $2
+                  AND is_rejected = true
+            """
+            params = [carrier, converted_plan_date.date()]
+
+            # Add branch filter
+            if branch:
+                if len(branch) == 1:
+                    query += " AND branch = $3"
+                    params.append(branch[0])  # single string
+
+            loads = await conn.fetch(query, *params)
+            return loads or []
+
+    except Exception as e:
+        logger.error(f"Error saving suggestions for carrier: {carrier}: {str(e)}")
         raise e
